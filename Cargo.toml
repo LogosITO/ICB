@@ -1,0 +1,18 @@
+﻿[workspace]
+resolver = "2"
+members = [
+    "crates/icb-common",
+    "crates/icb-core",
+    "crates/icb-cli",
+    "crates/icb-server",
+]
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+anyhow = "1"
+thiserror = "1"
+log = "0.4"
+env_logger = "0.11"
+petgraph = "0.6"
+tree-sitter = "0.22"
+toml = "0.8"
