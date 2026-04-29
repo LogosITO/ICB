@@ -20,6 +20,7 @@
 
 pub mod analysis;
 pub mod builder;
+pub mod cache;
 pub mod graph;
 pub mod query;
 pub mod visualizer;

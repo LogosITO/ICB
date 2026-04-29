@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use icb_common::Language;
 use icb_graph::builder::GraphBuilder;
-use icb_graph::{analysis, query, visualizer};
+use icb_graph::{analysis, cache, query, visualizer};
 use icb_parser::manager::ParserManager;
 
 #[derive(Parser)]
@@ -25,7 +25,10 @@ enum Command {
         compile_commands: Option<PathBuf>,
         #[arg(long, default_value = "c++17")]
         cpp_std: String,
+        #[arg(long)]
+        cache: Option<PathBuf>,
     },
+    /// Run queries on a project directory.
     Query {
         project: PathBuf,
         #[arg(short, long, default_value = "python")]
@@ -54,6 +57,8 @@ enum Command {
         complexity: bool,
         #[arg(long, default_value = "20", requires = "complexity")]
         threshold: usize,
+        #[arg(long)]
+        cache: Option<PathBuf>,
     },
 }
 
@@ -68,14 +73,16 @@ fn main() -> anyhow::Result<()> {
             language,
             compile_commands,
             cpp_std,
+            cache: cache_path,
         } => {
             let lang = parse_language(&language)?;
-            let (cpg, _files) = build_project_graph(
+            let (cpg, _files) = build_or_load_graph(
                 &manager,
                 lang,
                 &path,
                 compile_commands.as_deref(),
                 &cpp_std,
+                cache_path.as_deref(),
                 true,
             )?;
             println!(
@@ -99,14 +106,16 @@ fn main() -> anyhow::Result<()> {
             entries,
             complexity,
             threshold,
+            cache: cache_path,
         } => {
             let lang = parse_language(&language)?;
-            let (cpg, _files) = build_project_graph(
+            let (cpg, _files) = build_or_load_graph(
                 &manager,
                 lang,
                 &project,
                 compile_commands.as_deref(),
                 &cpp_std,
+                cache_path.as_deref(),
                 false,
             )?;
 
@@ -150,6 +159,52 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
         "cpp" | "c++" => Ok(Language::Cpp),
         _ => anyhow::bail!("Unsupported language: {}", s),
     }
+}
+
+fn build_or_load_graph(
+    manager: &ParserManager,
+    lang: Language,
+    path: &Path,
+    compile_commands: Option<&Path>,
+    cpp_std: &str,
+    cache_path: Option<&Path>,
+    show_progress: bool,
+) -> anyhow::Result<(icb_graph::graph::CodePropertyGraph, usize)> {
+    if let Some(cache_file) = cache_path {
+        if cache_file.exists() {
+            log::info!("Loading cached graph from {:?}", cache_file);
+            match cache::load_graph(cache_file) {
+                Ok(cpg) => {
+                    log::info!(
+                        "Using cached graph ({} nodes, {} edges)",
+                        cpg.node_count(),
+                        cpg.edge_count()
+                    );
+                    return Ok((cpg, 0));
+                }
+                Err(e) => log::warn!("Failed to load cache: {}", e),
+            }
+        }
+    }
+
+    let (cpg, files_count) = build_project_graph(
+        manager,
+        lang,
+        path,
+        compile_commands,
+        cpp_std,
+        show_progress,
+    )?;
+
+    if let Some(cache_file) = cache_path {
+        if let Err(e) = cache::save_graph(&cpg, cache_file) {
+            log::warn!("Failed to save cache: {}", e);
+        } else {
+            log::info!("Graph cached to {:?}", cache_file);
+        }
+    }
+
+    Ok((cpg, files_count))
 }
 
 fn build_project_graph(

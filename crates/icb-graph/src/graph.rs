@@ -1,61 +1,90 @@
 use icb_common::NodeKind;
 use petgraph::stable_graph::StableGraph;
+use serde::{Deserialize, Serialize};
 
 /// A node in the Code Property Graph.
-///
-/// Each node corresponds to a language entity (function, class, call,
-/// etc.) and stores its kind, optional name, and source location.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
-    /// Kind of the entity.
     pub kind: NodeKind,
-    /// Human-readable name, if available.
     pub name: Option<String>,
-    /// Unique symbol identifier (USR) used for deduplication across files.
     pub usr: Option<String>,
-    /// Line where this entity starts (1-based).
     pub start_line: usize,
-    /// Line where this entity ends (1-based).
     pub end_line: usize,
 }
 
-/// Edge types that can connect two nodes in the CPG.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// Edge type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Edge {
-    /// AST parent-child relationship.
     AstChild,
-    /// A call site that invokes a function/method.
     Call,
-    /// A reference to a variable, class, etc.
     Reference,
 }
 
-/// Underlying graph type alias.
 pub type CpgGraph = StableGraph<Node, Edge>;
 
-/// Central container for the Code Property Graph.
-///
-/// Build instances using [`GraphBuilder`](super::builder::GraphBuilder) rather
-/// than adding nodes manually.
-#[derive(Default)]
+/// Central Code Property Graph container.
+#[derive(Debug)]
 pub struct CodePropertyGraph {
-    /// The actual graph data structure.
     pub graph: CpgGraph,
 }
 
 impl CodePropertyGraph {
-    /// Construct an empty graph.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            graph: StableGraph::new(),
+        }
     }
 
-    /// Return the number of nodes in the graph.
     pub fn node_count(&self) -> usize {
         self.graph.node_count()
     }
 
-    /// Return the number of edges in the graph.
     pub fn edge_count(&self) -> usize {
         self.graph.edge_count()
+    }
+}
+
+impl Default for CodePropertyGraph {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Intermediate representation for (de)serialization.
+#[derive(Serialize, Deserialize)]
+pub struct GraphData {
+    pub nodes: Vec<Node>,
+    pub edges: Vec<(usize, usize, Edge)>,
+}
+
+impl From<&CodePropertyGraph> for GraphData {
+    fn from(cpg: &CodePropertyGraph) -> Self {
+        let nodes: Vec<Node> = cpg.graph.node_weights().cloned().collect();
+        let mut edges = Vec::new();
+        for edge_idx in cpg.graph.edge_indices() {
+            if let Some((src, tgt)) = cpg.graph.edge_endpoints(edge_idx) {
+                let weight = cpg.graph[edge_idx].clone();
+                edges.push((src.index(), tgt.index(), weight));
+            }
+        }
+        GraphData { nodes, edges }
+    }
+}
+
+impl From<GraphData> for CodePropertyGraph {
+    fn from(data: GraphData) -> Self {
+        let mut graph: CpgGraph = StableGraph::new();
+        let mut indices: Vec<petgraph::stable_graph::NodeIndex> =
+            Vec::with_capacity(data.nodes.len());
+        for node in data.nodes {
+            let idx = graph.add_node(node);
+            indices.push(idx);
+        }
+        for (src, tgt, edge) in data.edges {
+            if src < indices.len() && tgt < indices.len() {
+                graph.add_edge(indices[src], indices[tgt], edge);
+            }
+        }
+        CodePropertyGraph { graph }
     }
 }
