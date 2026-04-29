@@ -1,8 +1,9 @@
-﻿[workspace]
+[workspace]
 resolver = "2"
 members = [
     "crates/icb-common",
     "crates/icb-parser",
+    "crates/icb-clang",
     "crates/icb-graph",
     "crates/icb-cli",
     "crates/icb-server",

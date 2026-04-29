@@ -1,0 +1,12 @@
+[package]
+name = "icb-clang"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+icb-common = { path = "../icb-common" }
+icb-parser = { path = "../icb-parser" }
+clang-sys = "1"
+anyhow = { workspace = true }
+log = { workspace = true }
+tempfile = "3"

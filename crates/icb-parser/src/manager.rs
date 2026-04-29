@@ -8,6 +8,9 @@ use std::path::Path;
 /// Central entry point for parsing source code.
 ///
 /// Supports single files and whole directories (parallel parsing).
+/// Currently Python is supported out of the box.
+/// For C/C++ support use the `icb-clang` crate directly
+/// or via the CLI subcommand.
 #[derive(Default)]
 pub struct ParserManager;
 
@@ -32,18 +35,19 @@ impl ParserManager {
     ///
     /// # Supported extensions
     /// - Python: `.py`
+    /// - C/C++: `.cpp`, `.cxx`, `.c`, `.h`, `.hpp` (via Clang, if `icb-clang` is used separately)
     pub fn parse_directory(
         &self,
         lang: Language,
         root: &Path,
     ) -> Result<Vec<(String, Vec<RawNode>)>, IcbError> {
-        let mut py_files = Vec::new();
-        collect_files(root, &mut py_files, lang)?;
+        let mut files = Vec::new();
+        collect_files(root, &mut files, lang)?;
 
-        let results: Vec<_> = py_files
+        let results: Vec<_> = files
             .into_par_iter()
             .filter_map(|path| {
-                let content = std::fs::read_to_string(&path).ok()?;
+                let content = fs::read_to_string(&path).ok()?;
                 match self.parse_file(lang, &content) {
                     Ok(facts) => {
                         let relative = path.strip_prefix(root).unwrap_or(&path);
@@ -66,19 +70,21 @@ fn collect_files(
     files: &mut Vec<std::path::PathBuf>,
     lang: Language,
 ) -> Result<(), IcbError> {
-    let ext = match lang {
-        Language::Python => "py",
-        Language::Rust => "rs",
-        Language::JavaScript => "js",
-        Language::Cpp => "cpp", // will include .h etc later
+    let extensions: &[&str] = match lang {
+        Language::Python => &["py"],
+        Language::Rust => &["rs"],
+        Language::JavaScript => &["js"],
+        Language::Cpp => &["cpp", "cxx", "c", "h", "hpp"],
     };
     for entry in fs::read_dir(dir).map_err(IcbError::Io)? {
         let entry = entry.map_err(IcbError::Io)?;
         let path = entry.path();
         if path.is_dir() {
             collect_files(&path, files, lang)?;
-        } else if path.extension().and_then(|s| s.to_str()) == Some(ext) {
-            files.push(path);
+        } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+            if extensions.contains(&ext) {
+                files.push(path);
+            }
         }
     }
     Ok(())
