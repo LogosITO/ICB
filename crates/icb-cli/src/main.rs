@@ -1,8 +1,8 @@
 use clap::Parser;
-use std::path::PathBuf;
-use std::fs;
-use icb_core::parser::manager::ParserManager;
 use icb_common::Language;
+use icb_core::parser::manager::ParserManager;
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "icb")]
@@ -28,7 +28,10 @@ fn main() -> anyhow::Result<()> {
     let manager = ParserManager::new()?;
 
     let tree = manager.parse(lang, &source)?;
-    println!("✅ Парсинг успешен! Корневой узел: {:?}", tree.root_node().kind());
+    println!(
+        "✅ Парсинг успешен! Корневой узел: {:?}",
+        tree.root_node().kind()
+    );
 
     Ok(())
 }

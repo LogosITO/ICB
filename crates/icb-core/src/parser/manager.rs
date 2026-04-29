@@ -1,5 +1,5 @@
-use tree_sitter::{Parser, Language as TsLanguage};
-use icb_common::{Language, IcbError};
+use icb_common::{IcbError, Language};
+use tree_sitter::{Language as TsLanguage, Parser};
 
 pub struct ParserManager {
     python_lang: TsLanguage,
