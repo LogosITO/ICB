@@ -5,9 +5,9 @@ use std::collections::HashMap;
 
 /// Incrementally builds a [`CodePropertyGraph`] from parser facts.
 ///
-/// `GraphBuilder` handles deduplication of symbols using the [`RawNode::usr`]
-/// field (falling back to [`RawNode::name`]) and wires up AST parent-child
-/// relationships.
+/// Supports ingesting facts from multiple files and merging local graphs
+/// (e.g., from parallel parsing) into a single global graph with symbol
+/// deduplication.
 ///
 /// # Example
 ///
@@ -35,8 +35,8 @@ use std::collections::HashMap;
 pub struct GraphBuilder {
     /// The Code Property Graph under construction.
     pub cpg: CodePropertyGraph,
-    /// Map from symbol keys (USR or name) to graph node indices to avoid
-    /// duplicates.
+    /// Map from symbolic keys (USR or name) to graph node indices for
+    /// deduplication.
     symbol_index: HashMap<String, NodeIndex>,
 }
 
@@ -48,10 +48,8 @@ impl GraphBuilder {
 
     /// Ingest facts from a single file.
     ///
-    /// Each `RawNode` is converted to a graph node. If a node with the same
-    /// unique key already exists (matching `usr` or `name`), the existing
-    /// node is reused. AST parent-child relations are translated to
-    /// [`Edge::AstChild`] edges.
+    /// This method may be called multiple times (even from different threads
+    /// after merging) — each call enriches the same graph.
     pub fn ingest_file_facts(&mut self, facts: &[RawNode]) {
         let mut map: HashMap<usize, NodeIndex> = HashMap::new();
         for (i, raw) in facts.iter().enumerate() {
@@ -86,12 +84,36 @@ impl GraphBuilder {
         }
     }
 
-    /// Merge another builder into this one (reserved for parallel indexing).
+    /// Merge another `GraphBuilder` into this one.
     ///
-    /// Currently not implemented. When parallel parsing is added, this
-    /// method will combine two local graphs and unify their symbol indexes.
-    pub fn merge(&mut self, _other: GraphBuilder) {
-        unimplemented!("parallel merge not yet implemented")
+    /// All nodes from `other` are transferred to `self`. Nodes with the
+    /// same symbolic key (USR or name) that already exist in `self` are
+    /// reused, and edges are rewired accordingly. This is the main
+    /// mechanism to combine graphs from parallel file parsing.
+    pub fn merge(&mut self, other: GraphBuilder) {
+        // First, transfer all nodes from other, reusing existing ones
+        let mut node_map: HashMap<NodeIndex, NodeIndex> = HashMap::new();
+        for old_idx in other.cpg.graph.node_indices() {
+            let node = &other.cpg.graph[old_idx];
+            let usr = node.usr.clone().unwrap_or_default();
+            let new_idx = if let Some(&existing) = self.symbol_index.get(&usr) {
+                existing
+            } else {
+                let idx = self.cpg.graph.add_node(node.clone());
+                self.symbol_index.insert(usr, idx);
+                idx
+            };
+            node_map.insert(old_idx, new_idx);
+        }
+        // Transfer edges
+        for edge_ref in other.cpg.graph.edge_indices() {
+            let (source, target) = other.cpg.graph.edge_endpoints(edge_ref).unwrap();
+            let new_source = node_map[&source];
+            let new_target = node_map[&target];
+            self.cpg
+                .graph
+                .add_edge(new_source, new_target, other.cpg.graph[edge_ref].clone());
+        }
     }
 }
 
@@ -131,5 +153,15 @@ mod tests {
         let facts = vec![make_func_node("foo", 1), make_func_node("bar", 2)];
         builder.ingest_file_facts(&facts);
         assert_eq!(builder.cpg.node_count(), 2);
+    }
+
+    #[test]
+    fn test_merge_two_builders() {
+        let mut b1 = GraphBuilder::new();
+        b1.ingest_file_facts(&[make_func_node("foo", 1)]);
+        let mut b2 = GraphBuilder::new();
+        b2.ingest_file_facts(&[make_func_node("bar", 2), make_func_node("foo", 3)]); // duplicate foo
+        b1.merge(b2);
+        assert_eq!(b1.cpg.node_count(), 2); // foo, bar
     }
 }

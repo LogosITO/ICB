@@ -15,3 +15,5 @@ Cargo.lock
 Thumbs.db
 ehthumbs.db
 *.lnk
+
+!test_projects/
