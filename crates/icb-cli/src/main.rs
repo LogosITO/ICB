@@ -7,6 +7,9 @@ use icb_graph::builder::GraphBuilder;
 use icb_graph::query;
 use icb_parser::manager::ParserManager;
 
+/// Infinite Code Blueprint – universal code graph CLI.
+///
+/// Parses source files, builds a Code Property Graph, and runs queries.
 #[derive(Parser)]
 #[command(name = "icb")]
 #[command(about = "Infinite Code Blueprint CLI")]

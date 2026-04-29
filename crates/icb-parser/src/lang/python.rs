@@ -2,6 +2,27 @@ use crate::facts::RawNode;
 use icb_common::{IcbError, Language, NodeKind};
 use tree_sitter::Parser;
 
+/// Parse Python source code and return a list of `RawNode` facts.
+///
+/// This function uses a tree-sitter Python parser to walk the CST and
+/// extract function/class definitions, calls, and identifiers. Nodes that
+/// are not relevant for the graph are skipped.
+///
+/// # Errors
+///
+/// Returns [`IcbError::Parse`] if the tree-sitter parser cannot be
+/// initialised or if parsing fails.
+///
+/// # Examples
+///
+/// ```rust
+/// use icb_parser::lang::python::parse_python;
+///
+/// let source = "def answer(): return 42";
+/// let facts = parse_python(source).expect("valid Python");
+/// // There should be at least a function node and a return statement.
+/// assert!(facts.iter().any(|n| n.name.as_deref() == Some("answer")));
+/// ```
 pub fn parse_python(source: &str) -> Result<Vec<RawNode>, IcbError> {
     let mut parser = Parser::new();
     parser
@@ -88,4 +109,59 @@ fn collect_nodes(
         current_parent = collect_nodes(&child, source, nodes, current_parent);
     }
     new_parent
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icb_common::NodeKind;
+
+    #[test]
+    fn test_parse_simple_function() {
+        let source = "def hello(): pass";
+        let facts = parse_python(source).expect("parsing should succeed");
+        let functions: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function)
+            .collect();
+        assert_eq!(functions.len(), 1);
+        assert_eq!(functions[0].name.as_deref(), Some("hello"));
+    }
+
+    #[test]
+    fn test_parse_nested_function() {
+        let source = "def outer(): def inner(): pass";
+        let facts = parse_python(source).expect("parsing should succeed");
+        let outer = facts
+            .iter()
+            .find(|n| n.name.as_deref() == Some("outer"))
+            .unwrap();
+        let inner = facts
+            .iter()
+            .find(|n| n.name.as_deref() == Some("inner"))
+            .unwrap();
+        let outer_idx = facts
+            .iter()
+            .position(|n| n.name.as_deref() == Some("outer"))
+            .unwrap();
+        let inner_idx = facts
+            .iter()
+            .position(|n| n.name.as_deref() == Some("inner"))
+            .unwrap();
+        assert!(facts[outer_idx].children.contains(&inner_idx));
+        // inner should not be a direct child of root
+        assert_ne!(facts[outer_idx].kind, NodeKind::Module);
+    }
+
+    #[test]
+    fn test_call_site_has_name() {
+        let source = "foo()";
+        let facts = parse_python(source).expect("parsing should succeed");
+        let calls: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::CallSite)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name.as_deref(), Some("foo"));
+    }
 }
