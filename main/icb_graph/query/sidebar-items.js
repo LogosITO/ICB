@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["find_by_kind","find_calls_to"]};
+window.SIDEBAR_ITEMS = {"fn":["callees_of","callers_of","find_by_kind","find_calls_to","unused_functions"]};

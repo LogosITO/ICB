@@ -1,2 +1,2 @@
-createSrcSidebar('[["icb_cli",["",[],["main.rs"]]],["icb_common",["",[],["lib.rs"]]],["icb_graph",["",[],["builder.rs","graph.rs","lib.rs","query.rs"]]],["icb_parser",["",[["lang",[],["mod.rs","python.rs"]]],["facts.rs","lib.rs","manager.rs"]]],["icb_server",["",[],["main.rs"]]]]');
-//{"start":19,"fragment_lengths":[31,34,68,92,35]}
+createSrcSidebar('[["icb_cli",["",[],["main.rs"]]],["icb_common",["",[],["lib.rs"]]],["icb_graph",["",[],["builder.rs","graph.rs","lib.rs","query.rs","visualizer.rs"]]],["icb_parser",["",[["lang",[],["mod.rs","python.rs"]]],["facts.rs","lib.rs","manager.rs"]]],["icb_server",["",[],["main.rs"]]]]');
+//{"start":19,"fragment_lengths":[31,34,84,92,35]}

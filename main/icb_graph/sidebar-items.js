@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["builder","graph","query"]};
+window.SIDEBAR_ITEMS = {"mod":["builder","graph","query","visualizer"]};
