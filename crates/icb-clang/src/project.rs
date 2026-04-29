@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use crate::parser::parse_cpp_file;
 
+/// A single entry in a `compile_commands.json` database.
 #[derive(Debug, Deserialize)]
 struct CompileCommandEntry {
     file: String,
@@ -16,9 +17,16 @@ struct CompileCommandEntry {
     arguments: Option<Vec<String>>,
 }
 
-/// Parse a C/C++ project described by `compile_commands.json`.
+/// Parse an entire C/C++ project described by `compile_commands.json`.
 ///
 /// `base_dir` is used to resolve relative paths in the `file` fields.
+/// If `parallel` is `true`, translation units are processed in parallel
+/// using rayon.
+///
+/// # Errors
+///
+/// Returns [`IcbError::Parse`] if the compilation database cannot be read
+/// or any translation unit fails to parse.
 pub fn parse_project(
     compile_commands: &Path,
     base_dir: &Path,
@@ -27,15 +35,6 @@ pub fn parse_project(
     let data = fs::read_to_string(compile_commands).map_err(IcbError::Io)?;
     let entries: Vec<CompileCommandEntry> =
         serde_json::from_str(&data).map_err(|e| IcbError::Parse(e.to_string()))?;
-
-    // Normalize file paths: trim whitespace and remove zero-width spaces
-    let entries: Vec<_> = entries
-        .into_iter()
-        .map(|mut e| {
-            e.file = e.file.trim().replace('\u{200B}', "").to_string();
-            e
-        })
-        .collect();
 
     let process_entry = |entry: CompileCommandEntry| -> Result<(String, Vec<RawNode>), IcbError> {
         let file_path = resolve_file_path(&entry.file, base_dir);
@@ -46,7 +45,12 @@ pub fn parse_project(
             ))
         })?;
         let args = extract_args(&entry);
-        let facts = parse_cpp_file(&source, &args)?;
+        let rel_name = file_path
+            .strip_prefix(base_dir)
+            .unwrap_or(&file_path)
+            .to_str()
+            .unwrap_or("unknown");
+        let facts = parse_cpp_file(&source, &args, Some(rel_name))?;
         Ok((file_path.to_string_lossy().into_owned(), facts))
     };
 
@@ -82,6 +86,10 @@ fn extract_args(entry: &CompileCommandEntry) -> Vec<String> {
     Vec::new()
 }
 
+/// Parse all C/C++ files in `root` (recursive) and return facts.
+///
+/// `args` are passed to each translation unit. If `parallel` is `true`,
+/// files are processed in parallel.
 pub fn parse_directory(
     root: &Path,
     args: &[String],
@@ -92,8 +100,8 @@ pub fn parse_directory(
 
     let process_file = |path: PathBuf| -> Result<(String, Vec<RawNode>), IcbError> {
         let source = fs::read_to_string(&path).map_err(IcbError::Io)?;
-        let facts = parse_cpp_file(&source, args)?;
         let rel = path.strip_prefix(root).unwrap_or(&path);
+        let facts = parse_cpp_file(&source, args, Some(rel.to_str().unwrap_or("unknown")))?;
         Ok((rel.display().to_string(), facts))
     };
 
@@ -129,24 +137,24 @@ fn collect_cpp_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), IcbErro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icb_common::NodeKind;
-    use tempfile::tempdir;
 
     #[test]
     fn test_parse_directory() {
-        let dir = tempdir().unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let file_path = dir.path().join("test.cpp");
         std::fs::write(&file_path, "int x = 42;").unwrap();
 
         let results = parse_directory(dir.path(), &["-std=c++17".to_string()], false).unwrap();
         assert_eq!(results.len(), 1);
         let facts = &results[0].1;
-        assert!(facts.iter().any(|n| n.kind == NodeKind::Variable));
+        assert!(facts
+            .iter()
+            .any(|n| n.kind == icb_common::NodeKind::Variable));
     }
 
     #[test]
-    fn test_parse_project_from_cdb() {
-        let dir = tempdir().unwrap();
+    fn test_parse_project() {
+        let dir = tempfile::tempdir().unwrap();
         let cpp_file = dir.path().join("test.cpp");
         std::fs::write(&cpp_file, "int main() { return 0; }").unwrap();
 
@@ -162,6 +170,8 @@ mod tests {
         let results = parse_project(&cdb_path, dir.path(), false).unwrap();
         assert_eq!(results.len(), 1);
         let facts = &results[0].1;
-        assert!(facts.iter().any(|n| n.kind == NodeKind::Function));
+        assert!(facts
+            .iter()
+            .any(|n| n.kind == icb_common::NodeKind::Function));
     }
 }

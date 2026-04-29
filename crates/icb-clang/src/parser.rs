@@ -8,7 +8,22 @@ use std::os::raw::c_void;
 use std::ptr;
 use tempfile::Builder;
 
-pub fn parse_cpp_file(source: &str, args: &[String]) -> Result<Vec<RawNode>, IcbError> {
+/// Parse C/C++ source code using Clang and return a flat list of facts.
+///
+/// The source is written to a temporary file and Clang is invoked with
+/// `args` passed directly to the compiler. `file_name` is an optional
+/// human‑readable name (e.g., relative path) stored in each `RawNode`
+/// to enable later filtering.
+///
+/// # Errors
+///
+/// Returns [`IcbError::Parse`] if the Clang API cannot be initialised or
+/// the source cannot be parsed.
+pub fn parse_cpp_file(
+    source: &str,
+    args: &[String],
+    file_name: Option<&str>,
+) -> Result<Vec<RawNode>, IcbError> {
     let index = unsafe { clang_createIndex(0, 0) };
     if index.is_null() {
         return Err(IcbError::Parse("failed to create Clang index".into()));
@@ -62,7 +77,7 @@ pub fn parse_cpp_file(source: &str, args: &[String]) -> Result<Vec<RawNode>, Icb
 
     let cursor = unsafe { clang_getTranslationUnitCursor(tu) };
     let mut nodes = Vec::new();
-    visit_children(cursor, &mut nodes, None);
+    visit_children(cursor, &mut nodes, None, file_name);
 
     unsafe {
         clang_disposeTranslationUnit(tu);
@@ -75,12 +90,14 @@ pub fn parse_cpp_file(source: &str, args: &[String]) -> Result<Vec<RawNode>, Icb
 struct VisitorContext<'a> {
     nodes: &'a mut Vec<RawNode>,
     latest_parent: Option<usize>,
+    source_file: Option<&'a str>,
 }
 
 fn visit_children(
     cursor: CXCursor,
     nodes: &mut Vec<RawNode>,
     parent_idx: Option<usize>,
+    source_file: Option<&str>,
 ) -> Option<usize> {
     let kind = unsafe { clang_getCursorKind(cursor) };
     let (node_kind, name, usr) = match kind {
@@ -120,6 +137,7 @@ fn visit_children(
             let mut ctx = VisitorContext {
                 nodes,
                 latest_parent: parent_idx,
+                source_file,
             };
             let ctx_ptr: *mut c_void = &mut ctx as *mut _ as *mut c_void;
             unsafe {
@@ -142,6 +160,7 @@ fn visit_children(
         end_line,
         end_col,
         children: Vec::new(),
+        source_file: source_file.map(|s| s.to_string()),
     });
 
     if let Some(pidx) = parent_idx {
@@ -153,6 +172,7 @@ fn visit_children(
     let mut ctx = VisitorContext {
         nodes,
         latest_parent: new_parent,
+        source_file,
     };
     let ctx_ptr: *mut c_void = &mut ctx as *mut _ as *mut c_void;
     unsafe {
@@ -168,7 +188,7 @@ extern "C" fn visitor_callback(
     client_data: CXClientData,
 ) -> CXChildVisitResult {
     let ctx: &mut VisitorContext = unsafe { &mut *(client_data as *mut VisitorContext) };
-    ctx.latest_parent = visit_children(cursor, ctx.nodes, ctx.latest_parent);
+    ctx.latest_parent = visit_children(cursor, ctx.nodes, ctx.latest_parent, ctx.source_file);
     CXChildVisit_Continue
 }
 
@@ -226,18 +246,23 @@ fn cursor_usr(cursor: CXCursor) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use icb_common::NodeKind;
 
     #[test]
-    fn test_parse_cpp_with_flags() {
-        let source = "#ifndef FOO\n#define FOO 1\n#endif\nint val = FOO;";
-        let args = vec!["-std=c++17".to_string()];
-        let facts = parse_cpp_file(source, &args).expect("parsing should succeed");
-        let vars: Vec<_> = facts
+    fn test_parse_cpp_function() {
+        let source = "int main() { return 0; }";
+        let facts = parse_cpp_file(source, &[], Some("test.cpp")).expect("parsing should succeed");
+        let functions: Vec<_> = facts
             .iter()
-            .filter(|n| n.kind == NodeKind::Variable)
+            .filter(|n| n.kind == NodeKind::Function)
             .collect();
-        assert!(!vars.is_empty());
-        assert!(vars.iter().any(|v| v.name.as_deref() == Some("val")));
+        assert!(!functions.is_empty());
+        assert!(functions.iter().any(|f| f.name.as_deref() == Some("main")));
+    }
+
+    #[test]
+    fn test_source_file_set() {
+        let source = "int x;";
+        let facts = parse_cpp_file(source, &[], Some("unit.cpp")).unwrap();
+        assert_eq!(facts[0].source_file.as_deref(), Some("unit.cpp"));
     }
 }

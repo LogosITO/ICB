@@ -223,7 +223,16 @@ fn build_project_graph(
         } else if path.is_file() {
             let source = std::fs::read_to_string(path)?;
             let args = vec![format!("-std={}", cpp_std)];
-            let facts = icb_clang::parser::parse_cpp_file(&source, &args)?;
+            let facts = icb_clang::parser::parse_cpp_file(
+                &source,
+                &args,
+                Some(
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or("unknown"),
+                ),
+            )?;
             vec![(
                 path.file_name()
                     .unwrap_or_default()
@@ -241,7 +250,16 @@ fn build_project_graph(
         let source = std::fs::read_to_string(path)?;
         let facts = if lang == Language::Cpp {
             let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::parser::parse_cpp_file(&source, &args)?
+            icb_clang::parser::parse_cpp_file(
+                &source,
+                &args,
+                Some(
+                    path.file_name()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or("unknown"),
+                ),
+            )?
         } else {
             manager.parse_file(lang, &source)?
         };
@@ -249,7 +267,7 @@ fn build_project_graph(
             path.file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
-                .to_string(),
+                .into_owned(),
             facts,
         )]
     };

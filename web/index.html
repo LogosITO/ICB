@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB Graph Viewer</title>
+    <style>
+        :root {
+            --bg: #f8fafc;
+            --control-bg: rgba(255,255,255,0.94);
+            --shadow: 0 6px 20px rgba(0,0,0,0.06);
+            --radius: 14px;
+            --accent: #3b82f6;
+            --text: #1e293b;
+            --muted: #64748b;
+            --red: #ef4444;
+            --gray: #9ca3af;
+            --orange: #f59e0b;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: var(--bg);
+            overflow: hidden;
+        }
+        #controls {
+            position: absolute;
+            top: 20px; left: 20px;
+            background: var(--control-bg);
+            backdrop-filter: blur(12px);
+            padding: 16px 20px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        #searchInput {
+            width: 220px;
+            padding: 10px 14px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 14px;
+            outline: none;
+        }
+        #searchInput:focus { border-color: var(--accent); }
+        #funcSelect { min-width: 200px; padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; }
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        button:hover { background: #2563eb; }
+        #info { font-size: 14px; color: var(--muted); margin-left: 8px; }
+        #legend {
+            position: absolute;
+            bottom: 25px; left: 25px;
+            background: var(--control-bg);
+            backdrop-filter: blur(12px);
+            padding: 12px 18px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            z-index: 100;
+            font-size: 13px;
+            display: flex;
+            gap: 18px;
+            flex-wrap: wrap;
+        }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-color { width: 12px; height: 12px; border-radius: 4px; }
+        #tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 13px;
+            pointer-events: none;
+            z-index: 200;
+            display: none;
+        }
+        #sidebar {
+            position: absolute;
+            top: 0; right: 0;
+            width: 350px;
+            height: 100vh;
+            background: white;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.1);
+            z-index: 150;
+            padding: 20px;
+            overflow-y: auto;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+        }
+        #sidebar.open { transform: translateX(0); }
+        #sidebar h3 { margin-top: 0; }
+        #closeSidebar {
+            position: absolute;
+            top: 15px; right: 15px;
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+        }
+        #graph-container { width: 100vw; height: 100vh; }
+    </style>
+</head>
+<body>
+<div id="controls">
+    <label for="searchInput" style="font-weight:600;color:var(--text);">🔍 Function</label>
+    <input type="text" id="searchInput" placeholder="Type to filter..." autocomplete="off">
+    <select id="funcSelect" size="5"></select>
+    <button id="focusBtn">🔎 Focus</button>
+    <button id="fullBtn">🌐 Full graph</button>
+    <button id="metricsBtn">📊 Show metrics</button>
+    <span id="info">Ready</span>
+</div>
+<div id="legend">
+    <div class="legend-item"><div class="legend-color" style="background:#3b82f6"></div> Function</div>
+    <div class="legend-item"><div class="legend-color" style="background:#f59e0b"></div> Class</div>
+    <div class="legend-item"><div class="legend-color" style="background:#ef4444"></div> Cycle</div>
+    <div class="legend-item"><div class="legend-color" style="background:#9ca3af"></div> Dead code</div>
+</div>
+<div id="tooltip"></div>
+<div id="sidebar">
+    <button id="closeSidebar">&times;</button>
+    <div id="sidebarContent"></div>
+</div>
+<div id="graph-container"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sigma.js/2.4.0/sigma.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/graphology/0.25.4/graphology.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/graphology-layout-forceatlas2/0.10.1/graphology-layout-forceatlas2.min.js"></script>
+<script>
+    (async () => {
+        const container = document.getElementById('graph-container');
+        const graph = new graphology.Graph();
+        let sigmaRenderer = null;
+        let allFunctions = [];
+        let showMetrics = false;
+
+        function createRenderer() {
+            if (sigmaRenderer) sigmaRenderer.kill();
+            sigmaRenderer = new Sigma(graph, container, {
+                renderer: 'canvas',
+                labelRenderer: 'canvas',
+                minCameraRatio: 0.05,
+                maxCameraRatio: 20,
+                defaultEdgeColor: '#cbd5e1',
+            });
+            sigmaRenderer.on('enterNode', ({ node }) => {
+                const attrs = graph.getNodeAttributes(node);
+                document.getElementById('tooltip').style.display = 'block';
+                document.getElementById('tooltip').innerHTML = `<strong>${attrs.label}</strong> (${attrs.kind})`;
+            });
+            sigmaRenderer.on('leaveNode', () => {
+                document.getElementById('tooltip').style.display = 'none';
+            });
+            sigmaRenderer.on('moveNode', ({ event }) => {
+                const tooltip = document.getElementById('tooltip');
+                tooltip.style.left = (event.x + 15) + 'px';
+                tooltip.style.top = (event.y + 15) + 'px';
+            });
+            sigmaRenderer.on('clickNode', async ({ node }) => {
+                const attrs = graph.getNodeAttributes(node);
+                if (attrs.label && attrs.label !== '?') {
+                    const resp = await fetch(`/api/node?name=${encodeURIComponent(attrs.label)}`);
+                    const detail = await resp.json();
+                    showSidebar(detail);
+                }
+            });
+        }
+
+        function clearGraph() { graph.clear(); }
+
+        function loadSubgraph(data) {
+            clearGraph();
+            data.nodes.forEach((n, idx) => {
+                graph.addNode(idx, {
+                    label: n.name || '?',
+                    kind: n.kind,
+                    line: n.start_line,
+                    is_cycle: n.is_cycle,
+                    is_dead: n.is_dead,
+                    x: Math.random() * 100,
+                    y: Math.random() * 100,
+                    size: 6,
+                    color: getNodeColor({ kind: n.kind, is_cycle: n.is_cycle, is_dead: n.is_dead }),
+                });
+            });
+            data.edges.forEach(([src, tgt]) => {
+                if (src < data.nodes.length && tgt < data.nodes.length) {
+                    graph.addEdge(src, tgt, { size: 0.5, color: '#cbd5e1' });
+                }
+            });
+
+            const layout = new layoutForceAtlas2(graph, { iterations: 100, settings: { slowDown: 0.1, gravity: 0.2, scaling: 10 } });
+            layout.start();
+            setTimeout(() => { layout.stop(); createRenderer(); }, 2000);
+        }
+
+        function getNodeColor(node) {
+            if (showMetrics) {
+                if (node.is_cycle) return '#ef4444';
+                if (node.is_dead) return '#9ca3af';
+            }
+            return node.kind === 'Function' ? '#3b82f6' : '#f59e0b';
+        }
+
+        async function fetchGraph(params = {}) {
+            const qs = new URLSearchParams(params).toString();
+            const resp = await fetch(`/api/graph?${qs}`);
+            return await resp.json();
+        }
+
+        async function loadFunctionList() {
+            const data = await fetchGraph({ kind: 'Function', max_nodes: 2000 });
+            allFunctions = data.nodes.filter(n => n.name).sort((a,b) => a.name.localeCompare(b.name));
+            renderFunctionList(allFunctions);
+        }
+
+        const selectEl = document.getElementById('funcSelect');
+        const searchInput = document.getElementById('searchInput');
+        const infoEl = document.getElementById('info');
+        const sidebar = document.getElementById('sidebar');
+
+        function renderFunctionList(functions) {
+            selectEl.innerHTML = '';
+            functions.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f.name;
+                opt.textContent = `${f.name} (line ${f.start_line || '?'})`;
+                selectEl.appendChild(opt);
+            });
+        }
+
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.toLowerCase();
+            renderFunctionList(allFunctions.filter(f => f.name.toLowerCase().includes(query)));
+        });
+
+        document.getElementById('focusBtn').addEventListener('click', async () => {
+            const func = selectEl.value;
+            if (!func) return;
+            const data = await fetchGraph({ focus: func, max_nodes: 300, show_cycles: showMetrics, show_dead: showMetrics, entries: 'main' });
+            loadSubgraph(data);
+            infoEl.textContent = `Focus: ${func} — ${data.nodes?.length ?? 0} nodes`;
+        });
+
+        document.getElementById('fullBtn').addEventListener('click', async () => {
+            const data = await fetchGraph({ kind: 'Function', max_nodes: 500, show_cycles: showMetrics, show_dead: showMetrics, entries: 'main' });
+            loadSubgraph(data);
+            infoEl.textContent = `Full graph — ${data.nodes?.length ?? 0} nodes`;
+        });
+
+        document.getElementById('metricsBtn').addEventListener('click', () => {
+            showMetrics = !showMetrics;
+            document.getElementById('metricsBtn').textContent = showMetrics ? '📊 Hide metrics' : '📊 Show metrics';
+            graph.nodes().forEach(nodeId => {
+                const attrs = graph.getNodeAttributes(nodeId);
+                graph.setNodeAttribute(nodeId, 'color', getNodeColor(attrs));
+            });
+            if (sigmaRenderer) sigmaRenderer.refresh();
+        });
+
+        document.getElementById('closeSidebar').addEventListener('click', () => {
+            sidebar.classList.remove('open');
+        });
+
+        function showSidebar(detail) {
+            const html = `
+        <h3>${detail.name}</h3>
+        <p><strong>Kind:</strong> ${detail.kind}</p>
+        <p><strong>Line:</strong> ${detail.line}</p>
+        <p><strong>File:</strong> ${detail.file || 'N/A'}</p>
+        <p><strong>Callers:</strong> ${detail.callers.join(', ') || 'none'}</p>
+        <p><strong>Callees:</strong> ${detail.callees.join(', ') || 'none'}</p>
+        <p><strong>Cycle:</strong> ${detail.is_cycle ? '⚠️ Yes' : 'No'}</p>
+        <p><strong>Dead code:</strong> ${detail.is_dead ? '💀 Yes' : 'No'}</p>
+      `;
+            document.getElementById('sidebarContent').innerHTML = html;
+            sidebar.classList.add('open');
+        }
+
+        createRenderer();
+        await loadFunctionList();
+        infoEl.textContent = `Loaded ${allFunctions.length} functions`;
+    })();
+</script>
+</body>
+</html>

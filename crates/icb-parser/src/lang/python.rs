@@ -96,6 +96,7 @@ fn collect_nodes(
         end_line: end.row + 1,
         end_col: end.column,
         children: Vec::new(),
+        source_file: None,
     });
 
     if let Some(pidx) = parent_idx {

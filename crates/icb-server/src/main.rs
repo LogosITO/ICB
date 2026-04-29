@@ -1,29 +1,46 @@
+use actix_files::Files;
 use actix_web::{web, App, HttpResponse, HttpServer};
 use clap::Parser;
 use icb_common::Language;
+use icb_graph::analysis;
 use icb_graph::cache;
 use icb_graph::graph::{CodePropertyGraph, Edge, GraphData};
 use petgraph::visit::EdgeRef;
+use serde::Deserialize;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+/// ICB web server for graph visualization.
 #[derive(Parser)]
 #[command(name = "icb-server")]
 #[command(about = "ICB web server for graph visualization")]
 struct Cli {
     #[arg(short, long)]
     project: PathBuf,
+
     #[arg(short, long, default_value = "python")]
     language: String,
+
     #[arg(long)]
     compile_commands: Option<PathBuf>,
+
     #[arg(long, default_value = "c++17")]
     cpp_std: String,
+
     #[arg(long)]
     cache: Option<PathBuf>,
+
     #[arg(short = 'P', long, default_value = "8080")]
     port: u16,
+
+    /// Directory with static files (default: web).
+    #[arg(long, default_value = "web")]
+    static_dir: PathBuf,
+
+    /// Exclude nodes from external/system headers (based on source_file).
+    #[arg(long)]
+    no_system_headers: bool,
 }
 
 #[actix_web::main]
@@ -37,16 +54,27 @@ async fn main() -> anyhow::Result<()> {
         args.compile_commands.as_ref(),
         &args.cpp_std,
         args.cache.as_ref(),
+        args.no_system_headers,
     )?;
 
     let graph_data = web::Data::new(Mutex::new(graph));
+    let static_dir = args.static_dir.canonicalize().unwrap_or(args.static_dir);
+    if !static_dir.exists() {
+        eprintln!("Warning: static directory {:?} does not exist", static_dir);
+    }
+    println!("Serving static files from {:?}", static_dir);
+    println!("Open http://localhost:{}", args.port);
 
-    println!("Starting server at http://localhost:{}", args.port);
     HttpServer::new(move || {
         App::new()
             .app_data(graph_data.clone())
-            .route("/", web::get().to(index_page))
             .route("/api/graph", web::get().to(get_graph))
+            .route("/api/node", web::get().to(get_node_detail))
+            .service(
+                Files::new("/", static_dir.clone())
+                    .index_file("index.html")
+                    .prefer_utf8(true),
+            )
     })
     .bind(("127.0.0.1", args.port))?
     .run()
@@ -61,11 +89,11 @@ fn build_or_load_graph(
     compile_commands: Option<&PathBuf>,
     cpp_std: &str,
     cache_path: Option<&PathBuf>,
+    no_system_headers: bool,
 ) -> anyhow::Result<CodePropertyGraph> {
     let lang = parse_language(language)?;
     if let Some(cache_file) = cache_path {
         if cache_file.exists() {
-            log::info!("Loading graph from cache {:?}", cache_file);
             if let Ok(g) = cache::load_graph(cache_file) {
                 return Ok(g);
             }
@@ -73,7 +101,7 @@ fn build_or_load_graph(
     }
 
     let manager = icb_parser::manager::ParserManager::new();
-    let file_facts = if lang == Language::Cpp {
+    let mut file_facts: Vec<(String, Vec<icb_parser::facts::RawNode>)> = if lang == Language::Cpp {
         if let Some(cdb) = compile_commands {
             let cdb = cdb.canonicalize()?;
             let base_dir = cdb.parent().unwrap_or(Path::new("."));
@@ -81,7 +109,7 @@ fn build_or_load_graph(
         } else if project.is_file() {
             let source = std::fs::read_to_string(project)?;
             let args = vec![format!("-std={}", cpp_std)];
-            let facts = icb_clang::parser::parse_cpp_file(&source, &args)?;
+            let facts = icb_clang::parser::parse_cpp_file(&source, &args, Some("main.cpp"))?;
             vec![(
                 project
                     .file_name()
@@ -100,7 +128,11 @@ fn build_or_load_graph(
         let source = std::fs::read_to_string(project)?;
         let facts = if lang == Language::Cpp {
             let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::parser::parse_cpp_file(&source, &args)?
+            icb_clang::parser::parse_cpp_file(
+                &source,
+                &args,
+                Some(project.to_str().unwrap_or("unknown")),
+            )?
         } else {
             manager.parse_file(lang, &source)?
         };
@@ -113,6 +145,24 @@ fn build_or_load_graph(
             facts,
         )]
     };
+
+    if no_system_headers {
+        file_facts = file_facts
+            .into_iter()
+            .map(|(path, facts)| {
+                let filtered: Vec<_> = facts
+                    .into_iter()
+                    .filter(|n| {
+                        n.source_file
+                            .as_ref()
+                            .map(|sf| sf.starts_with(path.as_str()))
+                            .unwrap_or(true)
+                    })
+                    .collect();
+                (path, filtered)
+            })
+            .collect();
+    }
 
     let mut builder = icb_graph::builder::GraphBuilder::new();
     for (_, facts) in file_facts {
@@ -141,18 +191,31 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
     }
 }
 
-async fn index_page() -> HttpResponse {
-    HttpResponse::Ok()
-        .content_type("text/html; charset=utf-8")
-        .body(HTML_PAGE)
-}
+// ── API types ──
 
-#[derive(serde::Deserialize)]
+#[derive(Deserialize)]
 struct GraphQuery {
     kind: Option<String>,
     max_nodes: Option<usize>,
     focus: Option<String>,
+    show_cycles: Option<bool>,
+    show_dead: Option<bool>,
+    entries: Option<String>,
 }
+
+#[derive(serde::Serialize)]
+struct NodeDetail {
+    name: String,
+    kind: String,
+    line: usize,
+    file: String,
+    callers: Vec<String>,
+    callees: Vec<String>,
+    is_cycle: bool,
+    is_dead: bool,
+}
+
+// ── API handlers ──
 
 async fn get_graph(
     data: web::Data<Mutex<CodePropertyGraph>>,
@@ -163,17 +226,150 @@ async fn get_graph(
         kind,
         max_nodes,
         focus,
+        show_cycles,
+        show_dead,
+        entries,
     } = query.into_inner();
 
     let max = max_nodes.unwrap_or(200);
+    let show_cycles = show_cycles.unwrap_or(false);
+    let show_dead = show_dead.unwrap_or(false);
 
-    let filtered = if let Some(func) = focus {
-        focal_graph(&graph, &func, max)
+    let filtered = if let Some(ref func) = focus {
+        focal_graph(&graph, func, max)
     } else {
         subgraph_by_kind(&graph, kind.as_deref(), max)
     };
 
-    HttpResponse::Ok().json(&filtered)
+    if !show_cycles && !show_dead {
+        return HttpResponse::Ok().json(&filtered);
+    }
+
+    // Enrich with metrics
+    let mut value = serde_json::to_value(&filtered).unwrap();
+    if let Some(nodes) = value.get_mut("nodes").and_then(|n| n.as_array_mut()) {
+        let cycle_nodes: HashSet<usize> = if show_cycles {
+            let cycles = analysis::detect_call_cycles(&graph);
+            cycles
+                .iter()
+                .flat_map(|c| &c.functions)
+                .filter_map(|name| {
+                    graph
+                        .graph
+                        .node_indices()
+                        .find(|&idx| graph.graph[idx].name.as_deref() == Some(name))
+                        .map(|idx| idx.index())
+                })
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
+        let dead_nodes: HashSet<usize> = if show_dead {
+            let entry_list: Vec<String> = entries
+                .as_deref()
+                .unwrap_or("main")
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect();
+            analysis::detect_dead_code(&graph, &entry_list)
+                .iter()
+                .filter_map(|node| {
+                    graph
+                        .graph
+                        .node_indices()
+                        .find(|&idx| graph.graph[idx].name.as_deref() == node.name.as_deref())
+                        .map(|idx| idx.index())
+                })
+                .collect()
+        } else {
+            HashSet::new()
+        };
+
+        for node_val in nodes.iter_mut() {
+            if let Some(obj) = node_val.as_object_mut() {
+                let name = obj
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+                obj.insert(
+                    "is_cycle".to_string(),
+                    serde_json::Value::Bool(
+                        cycle_nodes.contains(&find_node_index_by_name(&graph, &name)),
+                    ),
+                );
+                obj.insert(
+                    "is_dead".to_string(),
+                    serde_json::Value::Bool(
+                        dead_nodes.contains(&find_node_index_by_name(&graph, &name)),
+                    ),
+                );
+            }
+        }
+    }
+
+    HttpResponse::Ok().json(&value)
+}
+
+async fn get_node_detail(
+    data: web::Data<Mutex<CodePropertyGraph>>,
+    query: web::Query<std::collections::HashMap<String, String>>,
+) -> HttpResponse {
+    let graph = data.lock().unwrap();
+    let name = match query.get("name") {
+        Some(n) => n.clone(),
+        None => return HttpResponse::BadRequest().json("missing 'name' parameter"),
+    };
+
+    let node_idx = match graph
+        .graph
+        .node_indices()
+        .find(|&idx| graph.graph[idx].name.as_deref() == Some(&name))
+    {
+        Some(idx) => idx,
+        None => return HttpResponse::NotFound().json("function not found"),
+    };
+
+    let node = &graph.graph[node_idx];
+    let callers: Vec<String> = icb_graph::query::callers_of(&graph, &name)
+        .iter()
+        .map(|(n, _)| n.name.clone().unwrap_or_default())
+        .collect();
+    let callees: Vec<String> = icb_graph::query::callees_of(&graph, &name)
+        .iter()
+        .map(|(n, _)| n.name.clone().unwrap_or_default())
+        .collect();
+
+    let cycles = analysis::detect_call_cycles(&graph);
+    let is_cycle = cycles.iter().any(|c| c.functions.contains(&name));
+    let dead_entries = vec!["main".to_string()];
+    let is_dead = analysis::detect_dead_code(&graph, &dead_entries)
+        .iter()
+        .any(|n| n.name.as_deref() == Some(&name));
+
+    let detail = NodeDetail {
+        name: node.name.clone().unwrap_or_default(),
+        kind: format!("{:?}", node.kind),
+        line: node.start_line,
+        file: node.usr.clone().unwrap_or_default(),
+        callers,
+        callees,
+        is_cycle,
+        is_dead,
+    };
+
+    HttpResponse::Ok().json(&detail)
+}
+
+// ── Graph helpers ──
+
+fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
+    cpg.graph
+        .node_indices()
+        .find(|&idx| cpg.graph[idx].name.as_deref() == Some(name))
+        .map(|idx| idx.index())
+        .unwrap_or(usize::MAX)
 }
 
 fn focal_graph(cpg: &CodePropertyGraph, func_name: &str, max_nodes: usize) -> GraphData {
@@ -306,127 +502,3 @@ fn subgraph_by_kind(cpg: &CodePropertyGraph, kind: Option<&str>, max_nodes: usiz
         edges: selected_edges,
     }
 }
-
-const HTML_PAGE: &str = "<!DOCTYPE html>
-<html>
-<head>
-<meta charset=\"utf-8\">
-<title>ICB Graph</title>
-<style>
-  body { margin: 0; font-family: sans-serif; }
-  #controls { padding: 10px; background: #f5f5f5; border-bottom: 1px solid #ccc; }
-  #info { margin-left: 10px; display: inline; }
-  svg { width: 100%; height: calc(100vh - 50px); }
-  select { min-width: 200px; }
-</style>
-</head>
-<body>
-<div id=\"controls\">
-  <label>Focus on function:</label>
-  <select id=\"funcSelect\">
-    <option value=\"\">-- all (limited) --</option>
-  </select>
-  <button id=\"focusBtn\">Focus</button>
-  <span id=\"info\">Loading...</span>
-</div>
-<svg></svg>
-<script src=\"https://d3js.org/d3.v7.min.js\"></script>
-<script>
-let allFunctions = [];
-
-async function loadFunctions() {
-  const resp = await fetch('/api/graph?kind=Function&max_nodes=500');
-  const data = await resp.json();
-  allFunctions = data.nodes;
-  const select = document.getElementById('funcSelect');
-  allFunctions.forEach(n => {
-    const opt = document.createElement('option');
-    opt.value = n.name || '';
-    opt.textContent = n.name || '(anonymous)';
-    select.appendChild(opt);
-  });
-}
-
-async function updateGraph(focus = null) {
-  document.getElementById('info').textContent = 'Loading...';
-  const url = focus
-    ? `/api/graph?focus=${encodeURIComponent(focus)}&max_nodes=200`
-    : `/api/graph?kind=Function&max_nodes=150`;
-
-  const resp = await fetch(url);
-  const data = await resp.json();
-  const nodes = data.nodes.map((n, i) => ({ id: i, label: n.name || '?', kind: n.kind }));
-  const edges = data.edges.map(e => ({ source: e[0], target: e[1], kind: e[2] }));
-
-  document.getElementById('info').textContent = `Nodes: ${nodes.length}, Edges: ${edges.length}`;
-
-  const svg = d3.select(\"svg\");
-  svg.selectAll(\"*\").remove();
-
-  const width = window.innerWidth;
-  const height = window.innerHeight - 50;
-
-  const simulation = d3.forceSimulation(nodes)
-    .force(\"link\", d3.forceLink(edges).id(d => d.id).distance(50))
-    .force(\"charge\", d3.forceManyBody().strength(-200))
-    .force(\"center\", d3.forceCenter(width/2, height/2));
-
-  const link = svg.append(\"g\")
-    .selectAll(\"line\")
-    .data(edges)
-    .join(\"line\")
-    .attr(\"stroke\", \"#999\")
-    .attr(\"stroke-opacity\", 0.6);
-
-  const node = svg.append(\"g\")
-    .selectAll(\"circle\")
-    .data(nodes)
-    .join(\"circle\")
-    .attr(\"r\", 5)
-    .attr(\"fill\", d => d.kind === \"Function\" ? \"steelblue\" : \"orange\")
-    .call(drag(simulation));
-
-  node.append(\"title\").text(d => `${d.label} (${d.kind})`);
-
-  simulation.on(\"tick\", () => {
-    link
-      .attr(\"x1\", d => d.source.x)
-      .attr(\"y1\", d => d.source.y)
-      .attr(\"x2\", d => d.target.x)
-      .attr(\"y2\", d => d.target.y);
-    node
-      .attr(\"cx\", d => d.x)
-      .attr(\"cy\", d => d.y);
-  });
-
-  function drag(simulation) {
-    function dragstarted(event, d) {
-      if (!event.active) simulation.alphaTarget(0.3).restart();
-      d.fx = d.x;
-      d.fy = d.y;
-    }
-    function dragged(event, d) {
-      d.fx = event.x;
-      d.fy = event.y;
-    }
-    function dragended(event, d) {
-      if (!event.active) simulation.alphaTarget(0);
-      d.fx = null;
-      d.fy = null;
-    }
-    return d3.drag()
-      .on(\"start\", dragstarted)
-      .on(\"drag\", dragged)
-      .on(\"end\", dragended);
-  }
-}
-
-document.getElementById('focusBtn').addEventListener('click', () => {
-  const val = document.getElementById('funcSelect').value;
-  updateGraph(val || null);
-});
-
-loadFunctions().then(() => updateGraph());
-</script>
-</body>
-</html>";

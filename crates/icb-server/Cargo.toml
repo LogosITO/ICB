@@ -9,10 +9,11 @@ icb-parser = { path = "../icb-parser" }
 icb-graph = { path = "../icb-graph" }
 icb-clang = { path = "../icb-clang" }
 actix-web = "4"
+actix-files = "0.6"
+serde = { workspace = true }
 serde_json = "1"
 clap = { workspace = true }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
-serde = { version = "1.0.228", features = ["derive"] }
-petgraph = "0.8.3"
+petgraph = { workspace = true }
