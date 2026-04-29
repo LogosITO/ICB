@@ -20,7 +20,7 @@ jobs:
           toolchain: stable
 
       - name: Build documentation
-        run: cargo doc --workspace --no-deps
+        run: cargo doc --workspace --exclude icb-clang --no-deps
 
       - name: Generate root index.html
         run: |
