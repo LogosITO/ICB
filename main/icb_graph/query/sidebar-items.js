@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["find_by_kind","find_calls_to"]};

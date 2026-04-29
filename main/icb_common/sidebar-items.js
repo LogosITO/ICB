@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["IcbError","Language"]};
+window.SIDEBAR_ITEMS = {"enum":["IcbError","Language","NodeKind"]};
