@@ -1,119 +1,178 @@
 use clap::Parser;
-use std::fs;
 use std::path::PathBuf;
 
 use icb_common::Language;
 use icb_graph::builder::GraphBuilder;
-use icb_graph::query;
+use icb_graph::{query, visualizer};
 use icb_parser::manager::ParserManager;
 
 /// Infinite Code Blueprint – universal code graph CLI.
-///
-/// Parses source files, builds a Code Property Graph, and runs queries.
 #[derive(Parser)]
 #[command(name = "icb")]
 #[command(about = "Infinite Code Blueprint CLI")]
 struct Cli {
-    /// Source file to analyze (cannot be used with --project)
-    path: Option<PathBuf>,
+    #[command(subcommand)]
+    command: Command,
+}
 
-    /// Programming language (required if --path is given)
-    #[arg(short, long)]
-    language: Option<String>,
-
-    /// Project directory to analyze (instead of a single file)
-    #[arg(short = 'P', long, conflicts_with = "path")]
-    project: Option<PathBuf>,
-
-    /// Language for project files (default: python)
-    #[arg(short = 'L', long, requires = "project")]
-    project_language: Option<String>,
+#[derive(clap::Subcommand)]
+enum Command {
+    /// Build the Code Property Graph and show basic statistics.
+    Analyze {
+        /// Source file or directory
+        path: PathBuf,
+        /// Programming language
+        #[arg(short, long)]
+        language: String,
+    },
+    /// Run queries on an already built graph (requires a project directory).
+    Query {
+        /// Project directory
+        project: PathBuf,
+        /// Language (default: python)
+        #[arg(short, long, default_value = "python")]
+        language: String,
+        /// Show all functions
+        #[arg(long)]
+        functions: bool,
+        /// Show callers of a function
+        #[arg(long)]
+        callers: Option<String>,
+        /// Show callees of a function
+        #[arg(long)]
+        callees: Option<String>,
+        /// Show unused functions
+        #[arg(long)]
+        unused: bool,
+        /// Export call graph as DOT and print to stdout
+        #[arg(long)]
+        dot: bool,
+    },
 }
 
 fn main() -> anyhow::Result<()> {
     env_logger::init();
-    let args = Cli::parse();
-
+    let cli = Cli::parse();
     let manager = ParserManager::new();
 
-    if let Some(project_dir) = args.project {
-        // ---- project mode ----
-        let lang_str = args.project_language.as_deref().unwrap_or("python");
-        let lang = match lang_str {
-            "python" => Language::Python,
-            "rust" => Language::Rust,
-            "javascript" => Language::JavaScript,
-            _ => anyhow::bail!("Unsupported project language: {}", lang_str),
-        };
-
-        let file_facts = manager.parse_directory(lang, &project_dir)?;
-        println!("Parsed {} files", file_facts.len());
-
-        let mut global_builder = GraphBuilder::new();
-        for (_rel_path, facts) in file_facts {
-            // each file could be merged in parallel, but here we merge sequentially for simplicity
-            let mut local = GraphBuilder::new();
-            local.ingest_file_facts(&facts);
-            global_builder.merge(local);
-        }
-
-        let cpg = global_builder.cpg;
-        println!(
-            "Global graph built: {} nodes, {} edges",
-            cpg.node_count(),
-            cpg.edge_count()
-        );
-
-        // Quick overview: count functions and classes
-        let functions = query::find_by_kind(&cpg, icb_common::NodeKind::Function);
-        let classes = query::find_by_kind(&cpg, icb_common::NodeKind::Class);
-        println!("Functions: {}, Classes: {}", functions.len(), classes.len());
-        for f in functions.iter().take(5) {
+    match cli.command {
+        Command::Analyze { path, language } => {
+            let lang = parse_language(&language)?;
+            let (cpg, _files) = build_project_graph(&manager, lang, &path, true)?;
             println!(
-                "  - '{}' at line {}",
-                f.name.as_deref().unwrap_or("?"),
-                f.start_line
+                "Graph: {} nodes, {} edges",
+                cpg.node_count(),
+                cpg.edge_count()
             );
         }
-        if functions.len() > 5 {
-            println!("  ... and {} more", functions.len() - 5);
+        Command::Query {
+            project,
+            language,
+            functions,
+            callers,
+            callees,
+            unused,
+            dot,
+        } => {
+            let lang = parse_language(&language)?;
+            let (cpg, _files) = build_project_graph(&manager, lang, &project, false)?;
+
+            if functions {
+                let funcs = query::find_by_kind(&cpg, icb_common::NodeKind::Function);
+                println!("Functions ({})", funcs.len());
+                for f in &funcs {
+                    println!(
+                        "  {} (line {})",
+                        f.name.as_deref().unwrap_or("?"),
+                        f.start_line
+                    );
+                }
+            }
+            if let Some(target) = callers {
+                let callers = query::callers_of(&cpg, &target);
+                println!("Callers of '{}' ({})", target, callers.len());
+                for (caller, _) in &callers {
+                    println!(
+                        "  {} (line {})",
+                        caller.name.as_deref().unwrap_or("?"),
+                        caller.start_line
+                    );
+                }
+            }
+            if let Some(target) = callees {
+                let callees = query::callees_of(&cpg, &target);
+                println!("Callees of '{}' ({})", target, callees.len());
+                for (callee, _) in &callees {
+                    println!(
+                        "  {} (line {})",
+                        callee.name.as_deref().unwrap_or("?"),
+                        callee.start_line
+                    );
+                }
+            }
+            if unused {
+                let unused = query::unused_functions(&cpg);
+                println!("Unused functions ({})", unused.len());
+                for f in &unused {
+                    println!(
+                        "  {} (line {})",
+                        f.name.as_deref().unwrap_or("?"),
+                        f.start_line
+                    );
+                }
+            }
+            if dot {
+                println!("{}", visualizer::export_call_dot(&cpg));
+            }
         }
-    } else if let Some(file_path) = args.path {
-        // ---- single file mode ----
-        let lang_str = args
-            .language
-            .ok_or_else(|| anyhow::anyhow!("--language is required for single file"))?;
-        let lang = match lang_str.as_str() {
-            "python" => Language::Python,
-            "rust" => Language::Rust,
-            "javascript" => Language::JavaScript,
-            _ => anyhow::bail!("Unsupported language: {}", lang_str),
-        };
-
-        let source = fs::read_to_string(&file_path)?;
-        let facts = manager.parse_file(lang, &source)?;
-
-        let mut builder = GraphBuilder::new();
-        builder.ingest_file_facts(&facts);
-        let cpg = builder.cpg;
-
-        println!(
-            "Graph built: {} nodes, {} edges",
-            cpg.node_count(),
-            cpg.edge_count()
-        );
-
-        let functions = query::find_by_kind(&cpg, icb_common::NodeKind::Function);
-        for f in functions {
-            println!(
-                "Function '{}' at line {}",
-                f.name.as_deref().unwrap_or("?"),
-                f.start_line
-            );
-        }
-    } else {
-        anyhow::bail!("Either --path or --project must be provided");
     }
 
     Ok(())
+}
+
+fn parse_language(s: &str) -> anyhow::Result<Language> {
+    match s {
+        "python" => Ok(Language::Python),
+        "rust" => Ok(Language::Rust),
+        "javascript" => Ok(Language::JavaScript),
+        _ => anyhow::bail!("Unsupported language: {}", s),
+    }
+}
+
+/// Build a global CPG from a project directory (or single file).
+/// Returns the graph and how many files were processed.
+fn build_project_graph(
+    manager: &ParserManager,
+    lang: Language,
+    path: &std::path::Path,
+    show_progress: bool,
+) -> anyhow::Result<(icb_graph::graph::CodePropertyGraph, usize)> {
+    let file_facts = if path.is_dir() {
+        manager.parse_directory(lang, path)?
+    } else {
+        let source = std::fs::read_to_string(path)?;
+        let facts = manager.parse_file(lang, &source)?;
+        vec![(
+            path.file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string(),
+            facts,
+        )]
+    };
+
+    let files_count = file_facts.len();
+    if show_progress {
+        println!("Parsed {} files", files_count);
+    }
+
+    let mut global_builder = GraphBuilder::new();
+    for (_rel_path, facts) in file_facts {
+        let mut local = GraphBuilder::new();
+        local.ingest_file_facts(&facts);
+        global_builder.merge(local);
+    }
+    global_builder.resolve_calls();
+
+    Ok((global_builder.cpg, files_count))
 }

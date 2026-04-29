@@ -1,13 +1,16 @@
 use crate::graph::{CodePropertyGraph, Edge, Node};
+use icb_common::NodeKind;
 use icb_parser::facts::RawNode;
 use petgraph::stable_graph::NodeIndex;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::collections::HashMap;
 
 /// Incrementally builds a [`CodePropertyGraph`] from parser facts.
 ///
 /// Supports ingesting facts from multiple files and merging local graphs
 /// (e.g., from parallel parsing) into a single global graph with symbol
-/// deduplication.
+/// deduplication. Call [`Self::resolve_calls`] after all facts are ingested
+/// to wire up call sites to their definitions.
 ///
 /// # Example
 ///
@@ -29,19 +32,20 @@ use std::collections::HashMap;
 ///     children: vec![],
 /// }];
 /// builder.ingest_file_facts(&facts);
+/// builder.resolve_calls();
 /// assert_eq!(builder.cpg.node_count(), 1);
 /// ```
 #[derive(Default)]
 pub struct GraphBuilder {
-    /// The Code Property Graph under construction.
     pub cpg: CodePropertyGraph,
-    /// Map from symbolic keys (USR or name) to graph node indices for
-    /// deduplication.
     symbol_index: HashMap<String, NodeIndex>,
+    /// Temporary storage for call resolving: maps function name -> Vec of NodeIndex (definitions)
+    function_defs: HashMap<String, Vec<NodeIndex>>,
+    /// Temporary storage for call sites: maps function name -> Vec of NodeIndex (calls)
+    call_sites: HashMap<String, Vec<NodeIndex>>,
 }
 
 impl GraphBuilder {
-    /// Create an empty builder.
     pub fn new() -> Self {
         Self::default()
     }
@@ -49,7 +53,7 @@ impl GraphBuilder {
     /// Ingest facts from a single file.
     ///
     /// This method may be called multiple times (even from different threads
-    /// after merging) — each call enriches the same graph.
+    /// after merging). Each call enriches the same graph.
     pub fn ingest_file_facts(&mut self, facts: &[RawNode]) {
         let mut map: HashMap<usize, NodeIndex> = HashMap::new();
         for (i, raw) in facts.iter().enumerate() {
@@ -72,8 +76,28 @@ impl GraphBuilder {
                 idx
             };
             map.insert(i, node_idx);
+
+            // Track definitions and call sites for later resolution
+            if let Some(name) = &raw.name {
+                match raw.kind {
+                    NodeKind::Function | NodeKind::Class => {
+                        self.function_defs
+                            .entry(name.clone())
+                            .or_default()
+                            .push(node_idx);
+                    }
+                    NodeKind::CallSite => {
+                        self.call_sites
+                            .entry(name.clone())
+                            .or_default()
+                            .push(node_idx);
+                    }
+                    _ => {}
+                }
+            }
         }
 
+        // Add AST edges
         for (i, raw) in facts.iter().enumerate() {
             let from_idx = map[&i];
             for &child_raw_idx in &raw.children {
@@ -84,14 +108,27 @@ impl GraphBuilder {
         }
     }
 
+    /// Resolve calls: for every call site with a matching function/class
+    /// definition, add a [`Edge::Call`] edge from the call site to the definition.
+    pub fn resolve_calls(&mut self) {
+        for (name, call_indices) in &self.call_sites {
+            if let Some(def_indices) = self.function_defs.get(name) {
+                for &call_idx in call_indices {
+                    for &def_idx in def_indices {
+                        self.cpg.graph.add_edge(call_idx, def_idx, Edge::Call);
+                    }
+                }
+            }
+        }
+    }
+
     /// Merge another `GraphBuilder` into this one.
     ///
     /// All nodes from `other` are transferred to `self`. Nodes with the
     /// same symbolic key (USR or name) that already exist in `self` are
-    /// reused, and edges are rewired accordingly. This is the main
-    /// mechanism to combine graphs from parallel file parsing.
+    /// reused, and edges are rewired accordingly. The temporary call/def
+    /// maps are also merged.
     pub fn merge(&mut self, other: GraphBuilder) {
-        // First, transfer all nodes from other, reusing existing ones
         let mut node_map: HashMap<NodeIndex, NodeIndex> = HashMap::new();
         for old_idx in other.cpg.graph.node_indices() {
             let node = &other.cpg.graph[old_idx];
@@ -105,14 +142,32 @@ impl GraphBuilder {
             };
             node_map.insert(old_idx, new_idx);
         }
-        // Transfer edges
-        for edge_ref in other.cpg.graph.edge_indices() {
-            let (source, target) = other.cpg.graph.edge_endpoints(edge_ref).unwrap();
-            let new_source = node_map[&source];
-            let new_target = node_map[&target];
-            self.cpg
-                .graph
-                .add_edge(new_source, new_target, other.cpg.graph[edge_ref].clone());
+        // Transfer edges, using source() and target() from EdgeRef
+        for edge_ref in other.cpg.graph.edge_references() {
+            let src = edge_ref.source();
+            let tgt = edge_ref.target();
+            if let (Some(&new_src), Some(&new_tgt)) = (node_map.get(&src), node_map.get(&tgt)) {
+                self.cpg
+                    .graph
+                    .add_edge(new_src, new_tgt, edge_ref.weight().clone());
+            }
+        }
+        // Merge auxiliary maps
+        for (name, defs) in other.function_defs {
+            let entry = self.function_defs.entry(name).or_default();
+            for idx in defs {
+                if let Some(&new_idx) = node_map.get(&idx) {
+                    entry.push(new_idx);
+                }
+            }
+        }
+        for (name, calls) in other.call_sites {
+            let entry = self.call_sites.entry(name).or_default();
+            for idx in calls {
+                if let Some(&new_idx) = node_map.get(&idx) {
+                    entry.push(new_idx);
+                }
+            }
         }
     }
 }
@@ -132,6 +187,20 @@ mod tests {
             start_col: 0,
             end_line: line,
             end_col: 10,
+            children: vec![],
+        }
+    }
+
+    fn make_call_node(name: &str, line: usize) -> RawNode {
+        RawNode {
+            language: Language::Python,
+            kind: NodeKind::CallSite,
+            name: Some(name.into()),
+            usr: None,
+            start_line: line,
+            start_col: 0,
+            end_line: line,
+            end_col: 5,
             children: vec![],
         }
     }
@@ -160,8 +229,23 @@ mod tests {
         let mut b1 = GraphBuilder::new();
         b1.ingest_file_facts(&[make_func_node("foo", 1)]);
         let mut b2 = GraphBuilder::new();
-        b2.ingest_file_facts(&[make_func_node("bar", 2), make_func_node("foo", 3)]); // duplicate foo
+        b2.ingest_file_facts(&[make_func_node("bar", 2), make_func_node("foo", 3)]);
         b1.merge(b2);
-        assert_eq!(b1.cpg.node_count(), 2); // foo, bar
+        assert_eq!(b1.cpg.node_count(), 2);
+    }
+
+    #[test]
+    fn test_resolve_calls_creates_edges() {
+        let mut builder = GraphBuilder::new();
+        let facts = vec![make_func_node("foo", 1), make_call_node("foo", 2)];
+        builder.ingest_file_facts(&facts);
+        builder.resolve_calls();
+        let call_edges: Vec<_> = builder
+            .cpg
+            .graph
+            .edge_references()
+            .filter(|e| *e.weight() == Edge::Call)
+            .collect();
+        assert!(!call_edges.is_empty());
     }
 }
