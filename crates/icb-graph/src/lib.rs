@@ -18,6 +18,7 @@
 //! 3. Access the [`graph::CodePropertyGraph`] via the builder's `cpg` field.
 //! 4. Use [`query`] functions to extract information.
 
+pub mod analysis;
 pub mod builder;
 pub mod graph;
 pub mod query;

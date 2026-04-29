@@ -2,11 +2,11 @@ use clap::Parser;
 use std::path::PathBuf;
 
 use icb_common::Language;
+use icb_graph::analysis;
 use icb_graph::builder::GraphBuilder;
 use icb_graph::{query, visualizer};
 use icb_parser::manager::ParserManager;
 
-/// Infinite Code Blueprint – universal code graph CLI.
 #[derive(Parser)]
 #[command(name = "icb")]
 #[command(about = "Infinite Code Blueprint CLI")]
@@ -19,13 +19,11 @@ struct Cli {
 enum Command {
     /// Build the Code Property Graph and show basic statistics.
     Analyze {
-        /// Source file or directory
         path: PathBuf,
-        /// Programming language
         #[arg(short, long)]
         language: String,
     },
-    /// Run queries on an already built graph (requires a project directory).
+    /// Run queries on a project directory.
     Query {
         /// Project directory
         project: PathBuf,
@@ -41,12 +39,27 @@ enum Command {
         /// Show callees of a function
         #[arg(long)]
         callees: Option<String>,
-        /// Show unused functions
+        /// Show unused functions (no callers)
         #[arg(long)]
         unused: bool,
-        /// Export call graph as DOT and print to stdout
+        /// Export call graph as DOT
         #[arg(long)]
         dot: bool,
+        /// Detect call cycles
+        #[arg(long)]
+        cycles: bool,
+        /// Detect dead code (unreachable functions from entry points)
+        #[arg(long)]
+        dead_code: bool,
+        /// Entry function names for dead code analysis (comma separated)
+        #[arg(long, default_value = "main", requires = "dead_code")]
+        entries: String,
+        /// Detect functions exceeding complexity threshold
+        #[arg(long)]
+        complexity: bool,
+        /// Threshold for complexity (AST nodes count)
+        #[arg(long, default_value = "20", requires = "complexity")]
+        threshold: usize,
     },
 }
 
@@ -58,7 +71,7 @@ fn main() -> anyhow::Result<()> {
     match cli.command {
         Command::Analyze { path, language } => {
             let lang = parse_language(&language)?;
-            let (cpg, _files) = build_project_graph(&manager, lang, &path, true)?;
+            let (cpg, _) = build_project_graph(&manager, lang, &path, true)?;
             println!(
                 "Graph: {} nodes, {} edges",
                 cpg.node_count(),
@@ -73,56 +86,40 @@ fn main() -> anyhow::Result<()> {
             callees,
             unused,
             dot,
+            cycles,
+            dead_code,
+            entries,
+            complexity,
+            threshold,
         } => {
             let lang = parse_language(&language)?;
-            let (cpg, _files) = build_project_graph(&manager, lang, &project, false)?;
+            let (cpg, _) = build_project_graph(&manager, lang, &project, false)?;
 
             if functions {
-                let funcs = query::find_by_kind(&cpg, icb_common::NodeKind::Function);
-                println!("Functions ({})", funcs.len());
-                for f in &funcs {
-                    println!(
-                        "  {} (line {})",
-                        f.name.as_deref().unwrap_or("?"),
-                        f.start_line
-                    );
-                }
+                print_functions(&cpg);
             }
             if let Some(target) = callers {
-                let callers = query::callers_of(&cpg, &target);
-                println!("Callers of '{}' ({})", target, callers.len());
-                for (caller, _) in &callers {
-                    println!(
-                        "  {} (line {})",
-                        caller.name.as_deref().unwrap_or("?"),
-                        caller.start_line
-                    );
-                }
+                print_callers(&cpg, &target);
             }
             if let Some(target) = callees {
-                let callees = query::callees_of(&cpg, &target);
-                println!("Callees of '{}' ({})", target, callees.len());
-                for (callee, _) in &callees {
-                    println!(
-                        "  {} (line {})",
-                        callee.name.as_deref().unwrap_or("?"),
-                        callee.start_line
-                    );
-                }
+                print_callees(&cpg, &target);
             }
             if unused {
-                let unused = query::unused_functions(&cpg);
-                println!("Unused functions ({})", unused.len());
-                for f in &unused {
-                    println!(
-                        "  {} (line {})",
-                        f.name.as_deref().unwrap_or("?"),
-                        f.start_line
-                    );
-                }
+                print_unused(&cpg);
             }
             if dot {
                 println!("{}", visualizer::export_call_dot(&cpg));
+            }
+            if cycles {
+                print_cycles(&cpg);
+            }
+            if dead_code {
+                let entry_list: Vec<String> =
+                    entries.split(',').map(|s| s.trim().to_string()).collect();
+                print_dead_code(&cpg, &entry_list);
+            }
+            if complexity {
+                print_complexity(&cpg, threshold);
             }
         }
     }
@@ -139,8 +136,6 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
     }
 }
 
-/// Build a global CPG from a project directory (or single file).
-/// Returns the graph and how many files were processed.
 fn build_project_graph(
     manager: &ParserManager,
     lang: Language,
@@ -167,7 +162,7 @@ fn build_project_graph(
     }
 
     let mut global_builder = GraphBuilder::new();
-    for (_rel_path, facts) in file_facts {
+    for (_, facts) in file_facts {
         let mut local = GraphBuilder::new();
         local.ingest_file_facts(&facts);
         global_builder.merge(local);
@@ -175,4 +170,87 @@ fn build_project_graph(
     global_builder.resolve_calls();
 
     Ok((global_builder.cpg, files_count))
+}
+
+fn print_functions(cpg: &icb_graph::graph::CodePropertyGraph) {
+    let funcs = query::find_by_kind(cpg, icb_common::NodeKind::Function);
+    println!("Functions ({})", funcs.len());
+    for f in &funcs {
+        println!(
+            "  {} (line {})",
+            f.name.as_deref().unwrap_or("?"),
+            f.start_line
+        );
+    }
+}
+
+fn print_callers(cpg: &icb_graph::graph::CodePropertyGraph, target: &str) {
+    let callers = query::callers_of(cpg, target);
+    println!("Callers of '{}' ({})", target, callers.len());
+    for (caller, _) in &callers {
+        println!(
+            "  {} (line {})",
+            caller.name.as_deref().unwrap_or("?"),
+            caller.start_line
+        );
+    }
+}
+
+fn print_callees(cpg: &icb_graph::graph::CodePropertyGraph, target: &str) {
+    let callees = query::callees_of(cpg, target);
+    println!("Callees of '{}' ({})", target, callees.len());
+    for (callee, _) in &callees {
+        println!(
+            "  {} (line {})",
+            callee.name.as_deref().unwrap_or("?"),
+            callee.start_line
+        );
+    }
+}
+
+fn print_unused(cpg: &icb_graph::graph::CodePropertyGraph) {
+    let unused = query::unused_functions(cpg);
+    println!("Unused functions ({})", unused.len());
+    for f in &unused {
+        println!(
+            "  {} (line {})",
+            f.name.as_deref().unwrap_or("?"),
+            f.start_line
+        );
+    }
+}
+
+fn print_cycles(cpg: &icb_graph::graph::CodePropertyGraph) {
+    let cycles = analysis::detect_call_cycles(cpg);
+    println!("Call cycles ({})", cycles.len());
+    for cycle in &cycles {
+        println!("  Length {}: {}", cycle.length, cycle.functions.join(", "));
+    }
+}
+
+fn print_dead_code(cpg: &icb_graph::graph::CodePropertyGraph, entries: &[String]) {
+    let dead = analysis::detect_dead_code(cpg, entries);
+    println!("Dead code from entries {:?} ({})", entries, dead.len());
+    for f in &dead {
+        println!(
+            "  {} (line {})",
+            f.name.as_deref().unwrap_or("?"),
+            f.start_line
+        );
+    }
+}
+
+fn print_complexity(cpg: &icb_graph::graph::CodePropertyGraph, threshold: usize) {
+    let complex = analysis::detect_complex_functions(cpg, threshold);
+    println!(
+        "Complex functions (threshold {}): {}",
+        threshold,
+        complex.len()
+    );
+    for report in &complex {
+        println!(
+            "  {} (AST nodes: {}, line {})",
+            report.function_name, report.ast_node_count, report.start_line
+        );
+    }
 }
