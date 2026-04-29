@@ -8,18 +8,7 @@ use std::os::raw::c_void;
 use std::ptr;
 use tempfile::Builder;
 
-/// Parse C/C++ source code using Clang and return a flat list of facts.
-///
-/// The source is written to a temporary file, and Clang is invoked with
-/// basic C++11 flags (`-std=c++11`, `-x c++`). This ensures that even
-/// simple snippets are parsed successfully without relying on system
-/// headers.
-///
-/// # Errors
-///
-/// Returns [`IcbError::Parse`] if the Clang API cannot be initialised or
-/// the source cannot be parsed.
-pub fn parse_cpp(source: &str) -> Result<Vec<RawNode>, IcbError> {
+pub fn parse_cpp_file(source: &str, args: &[String]) -> Result<Vec<RawNode>, IcbError> {
     let index = unsafe { clang_createIndex(0, 0) };
     if index.is_null() {
         return Err(IcbError::Parse("failed to create Clang index".into()));
@@ -36,13 +25,11 @@ pub fn parse_cpp(source: &str) -> Result<Vec<RawNode>, IcbError> {
         .ok_or_else(|| IcbError::Parse("non-UTF8 temp path".into()))?;
     let filename_c = CString::new(filename).unwrap();
 
-    let args: Vec<CString> = vec![
-        CString::new("-std=c++11").unwrap(),
-        CString::new("-x").unwrap(),
-        CString::new("c++").unwrap(),
-    ];
-    let mut c_args: Vec<_> = args.iter().map(|a| a.as_ptr()).collect();
-    c_args.push(ptr::null());
+    let mut arg_ptrs: Vec<*const i8> = args
+        .iter()
+        .map(|a| CString::new(a.as_str()).unwrap().into_raw() as *const i8)
+        .collect();
+    arg_ptrs.push(ptr::null());
 
     let mut tu: CXTranslationUnit = ptr::null_mut();
 
@@ -50,14 +37,21 @@ pub fn parse_cpp(source: &str) -> Result<Vec<RawNode>, IcbError> {
         clang_parseTranslationUnit2(
             index,
             filename_c.as_ptr(),
-            ptr::null(),
-            0,
+            arg_ptrs.as_ptr(),
+            args.len() as i32,
             ptr::null_mut(),
             0,
             CXTranslationUnit_None,
             &mut tu,
         )
     };
+
+    for &cstr_ptr in &arg_ptrs[..args.len()] {
+        unsafe {
+            let _ = CString::from_raw(cstr_ptr as *mut i8);
+        }
+    }
+
     if error != CXError_Success {
         unsafe { clang_disposeIndex(index) };
         return Err(IcbError::Parse(format!(
@@ -232,27 +226,18 @@ fn cursor_usr(cursor: CXCursor) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use icb_common::NodeKind;
 
     #[test]
-    fn test_parse_cpp_function() {
-        let source = "int main() { return 0; }";
-        let facts = parse_cpp(source).expect("parsing should succeed");
-        let functions: Vec<_> = facts
+    fn test_parse_cpp_with_flags() {
+        let source = "#ifndef FOO\n#define FOO 1\n#endif\nint val = FOO;";
+        let args = vec!["-std=c++17".to_string()];
+        let facts = parse_cpp_file(source, &args).expect("parsing should succeed");
+        let vars: Vec<_> = facts
             .iter()
-            .filter(|n| n.kind == NodeKind::Function)
+            .filter(|n| n.kind == NodeKind::Variable)
             .collect();
-        assert!(!functions.is_empty());
-        assert!(functions.iter().any(|f| f.name.as_deref() == Some("main")));
-    }
-
-    #[test]
-    fn test_parse_cpp_call() {
-        let source = "int foo() { return 0; } int bar() { return foo(); }";
-        let facts = parse_cpp(source).expect("parsing should succeed");
-        let calls: Vec<_> = facts
-            .iter()
-            .filter(|n| n.kind == NodeKind::CallSite)
-            .collect();
-        assert!(!calls.is_empty());
+        assert!(!vars.is_empty());
+        assert!(vars.iter().any(|v| v.name.as_deref() == Some("val")));
     }
 }

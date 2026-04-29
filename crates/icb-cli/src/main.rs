@@ -1,10 +1,9 @@
 use clap::Parser;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use icb_common::Language;
-use icb_graph::analysis;
 use icb_graph::builder::GraphBuilder;
-use icb_graph::{query, visualizer};
+use icb_graph::{analysis, query, visualizer};
 use icb_parser::manager::ParserManager;
 
 #[derive(Parser)]
@@ -17,47 +16,42 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
-    /// Build the Code Property Graph and show basic statistics.
+    /// Build Code Property Graph and show basic statistics.
     Analyze {
         path: PathBuf,
         #[arg(short, long)]
         language: String,
+        #[arg(long)]
+        compile_commands: Option<PathBuf>,
+        #[arg(long, default_value = "c++17")]
+        cpp_std: String,
     },
-    /// Run queries on a project directory.
     Query {
-        /// Project directory
         project: PathBuf,
-        /// Language (default: python)
         #[arg(short, long, default_value = "python")]
         language: String,
-        /// Show all functions
+        #[arg(long)]
+        compile_commands: Option<PathBuf>,
+        #[arg(long, default_value = "c++17")]
+        cpp_std: String,
         #[arg(long)]
         functions: bool,
-        /// Show callers of a function
         #[arg(long)]
         callers: Option<String>,
-        /// Show callees of a function
         #[arg(long)]
         callees: Option<String>,
-        /// Show unused functions (no callers)
         #[arg(long)]
         unused: bool,
-        /// Export call graph as DOT
         #[arg(long)]
         dot: bool,
-        /// Detect call cycles
         #[arg(long)]
         cycles: bool,
-        /// Detect dead code (unreachable functions from entry points)
         #[arg(long)]
         dead_code: bool,
-        /// Entry function names for dead code analysis (comma separated)
         #[arg(long, default_value = "main", requires = "dead_code")]
         entries: String,
-        /// Detect functions exceeding complexity threshold
         #[arg(long)]
         complexity: bool,
-        /// Threshold for complexity (AST nodes count)
         #[arg(long, default_value = "20", requires = "complexity")]
         threshold: usize,
     },
@@ -69,9 +63,21 @@ fn main() -> anyhow::Result<()> {
     let manager = ParserManager::new();
 
     match cli.command {
-        Command::Analyze { path, language } => {
+        Command::Analyze {
+            path,
+            language,
+            compile_commands,
+            cpp_std,
+        } => {
             let lang = parse_language(&language)?;
-            let (cpg, _) = build_project_graph(&manager, lang, &path, true)?;
+            let (cpg, _files) = build_project_graph(
+                &manager,
+                lang,
+                &path,
+                compile_commands.as_deref(),
+                &cpp_std,
+                true,
+            )?;
             println!(
                 "Graph: {} nodes, {} edges",
                 cpg.node_count(),
@@ -81,6 +87,8 @@ fn main() -> anyhow::Result<()> {
         Command::Query {
             project,
             language,
+            compile_commands,
+            cpp_std,
             functions,
             callers,
             callees,
@@ -93,7 +101,14 @@ fn main() -> anyhow::Result<()> {
             threshold,
         } => {
             let lang = parse_language(&language)?;
-            let (cpg, _) = build_project_graph(&manager, lang, &project, false)?;
+            let (cpg, _files) = build_project_graph(
+                &manager,
+                lang,
+                &project,
+                compile_commands.as_deref(),
+                &cpp_std,
+                false,
+            )?;
 
             if functions {
                 print_functions(&cpg);
@@ -132,6 +147,7 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
         "python" => Ok(Language::Python),
         "rust" => Ok(Language::Rust),
         "javascript" => Ok(Language::JavaScript),
+        "cpp" | "c++" => Ok(Language::Cpp),
         _ => anyhow::bail!("Unsupported language: {}", s),
     }
 }
@@ -139,14 +155,41 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
 fn build_project_graph(
     manager: &ParserManager,
     lang: Language,
-    path: &std::path::Path,
+    path: &Path,
+    compile_commands: Option<&Path>,
+    cpp_std: &str,
     show_progress: bool,
 ) -> anyhow::Result<(icb_graph::graph::CodePropertyGraph, usize)> {
-    let file_facts = if path.is_dir() {
+    let file_facts: Vec<(String, Vec<icb_parser::facts::RawNode>)> = if lang == Language::Cpp {
+        if let Some(cdb) = compile_commands {
+            let cdb = cdb.canonicalize()?;
+            let base_dir = cdb.parent().unwrap_or(Path::new("."));
+            icb_clang::project::parse_project(&cdb, base_dir, true)?
+        } else if path.is_file() {
+            let source = std::fs::read_to_string(path)?;
+            let args = vec![format!("-std={}", cpp_std)];
+            let facts = icb_clang::parser::parse_cpp_file(&source, &args)?;
+            vec![(
+                path.file_name()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .into_owned(),
+                facts,
+            )]
+        } else {
+            let args = vec![format!("-std={}", cpp_std)];
+            icb_clang::project::parse_directory(path, &args, true)?
+        }
+    } else if path.is_dir() {
         manager.parse_directory(lang, path)?
     } else {
         let source = std::fs::read_to_string(path)?;
-        let facts = manager.parse_file(lang, &source)?;
+        let facts = if lang == Language::Cpp {
+            let args = vec![format!("-std={}", cpp_std)];
+            icb_clang::parser::parse_cpp_file(&source, &args)?
+        } else {
+            manager.parse_file(lang, &source)?
+        };
         vec![(
             path.file_name()
                 .unwrap_or_default()
