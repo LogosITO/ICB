@@ -22,16 +22,25 @@ jobs:
           components: rustfmt, clippy
 
       - name: Install LLVM/Clang
-        run: sudo apt-get update && sudo apt-get install -y libclang-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-18 libclang-18-dev
+          sudo ln -sf /usr/lib/llvm-18/lib/libclang.so.1 /usr/lib/x86_64-linux-gnu/libclang.so || true
 
       - name: Build
         run: cargo build --workspace --verbose
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-18/lib
 
       - name: Test
         run: cargo test --workspace --verbose
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-18/lib
 
       - name: Clippy (lint)
         run: cargo clippy --workspace -- -D warnings
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-18/lib
 
       - name: Format check
         run: cargo fmt --all -- --check
