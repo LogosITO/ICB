@@ -22,8 +22,18 @@ jobs:
       - name: Build documentation
         run: cargo doc --workspace --no-deps
 
+      - name: Generate root index.html
+        run: |
+          echo "<html><body><h1>ICB Documentation</h1><ul>" > target/doc/index.html
+          for dir in target/doc/*/; do
+            name=$(basename "$dir")
+            if [ "$name" != "src" ]; then
+              echo "<li><a href='${name}/index.html'>${name}</a></li>" >> target/doc/index.html
+            fi
+          done
+          echo "</ul></body></html>" >> target/doc/index.html
+
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/')
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
