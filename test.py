@@ -1,4 +1,4 @@
-def hello():
+def greet():
     print("Hello")
 
-hello()
+greet()

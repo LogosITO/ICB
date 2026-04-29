@@ -2,7 +2,8 @@
 resolver = "2"
 members = [
     "crates/icb-common",
-    "crates/icb-core",
+    "crates/icb-parser",
+    "crates/icb-graph",
     "crates/icb-cli",
     "crates/icb-server",
 ]
@@ -11,8 +12,11 @@ members = [
 serde = { version = "1", features = ["derive"] }
 anyhow = "1"
 thiserror = "1"
-log = "0.4"
-env_logger = "0.11"
 petgraph = "0.6"
 tree-sitter = "0.22"
-toml = "0.8"
+tree-sitter-python = "0.21"
+rayon = "1"
+parking_lot = "0.12"
+log = "0.4"
+env_logger = "0.11"
+clap = { version = "4", features = ["derive"] }

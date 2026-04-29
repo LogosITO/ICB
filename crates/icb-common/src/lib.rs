@@ -5,11 +5,23 @@ pub enum Language {
     Rust,
     Python,
     JavaScript,
+    Cpp,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum NodeKind {
+    Module,
+    Function,
+    Class,
+    Variable,
+    CallSite,
+    Parameter,
+    Import,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum IcbError {
-    #[error("Parsing error: {0}")]
+    #[error("Parse error: {0}")]
     Parse(String),
     #[error("Graph error: {0}")]
     Graph(String),

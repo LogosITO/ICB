@@ -1,0 +1,13 @@
+[package]
+name = "icb-parser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+icb-common = { path = "../icb-common" }
+tree-sitter = { workspace = true }
+tree-sitter-python = { workspace = true }
+anyhow = { workspace = true }
+rayon = { workspace = true }
+parking_lot = { workspace = true }
+log = { workspace = true }
