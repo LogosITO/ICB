@@ -19,8 +19,15 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install LLVM/Clang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libclang-dev
+
       - name: Build documentation
-        run: cargo doc --workspace --exclude icb-clang --no-deps
+        run: cargo doc --workspace --no-deps
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-14/lib
 
       - name: Generate root index.html
         run: |
