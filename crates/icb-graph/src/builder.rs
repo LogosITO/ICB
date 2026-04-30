@@ -30,6 +30,7 @@ use std::collections::HashMap;
 ///     end_line: 1,
 ///     end_col: 5,
 ///     children: vec![],
+///     source_file: None,
 /// }];
 /// builder.ingest_file_facts(&facts);
 /// builder.resolve_calls();
@@ -39,9 +40,7 @@ use std::collections::HashMap;
 pub struct GraphBuilder {
     pub cpg: CodePropertyGraph,
     symbol_index: HashMap<String, NodeIndex>,
-    /// Temporary storage for call resolving: maps function name -> Vec of NodeIndex (definitions)
     function_defs: HashMap<String, Vec<NodeIndex>>,
-    /// Temporary storage for call sites: maps function name -> Vec of NodeIndex (calls)
     call_sites: HashMap<String, Vec<NodeIndex>>,
 }
 
@@ -77,7 +76,6 @@ impl GraphBuilder {
             };
             map.insert(i, node_idx);
 
-            // Track definitions and call sites for later resolution
             if let Some(name) = &raw.name {
                 match raw.kind {
                     NodeKind::Function | NodeKind::Class => {
@@ -97,7 +95,6 @@ impl GraphBuilder {
             }
         }
 
-        // Add AST edges
         for (i, raw) in facts.iter().enumerate() {
             let from_idx = map[&i];
             for &child_raw_idx in &raw.children {
@@ -142,7 +139,6 @@ impl GraphBuilder {
             };
             node_map.insert(old_idx, new_idx);
         }
-        // Transfer edges, using source() and target() from EdgeRef
         for edge_ref in other.cpg.graph.edge_references() {
             let src = edge_ref.source();
             let tgt = edge_ref.target();
@@ -152,7 +148,6 @@ impl GraphBuilder {
                     .add_edge(new_src, new_tgt, edge_ref.weight().clone());
             }
         }
-        // Merge auxiliary maps
         for (name, defs) in other.function_defs {
             let entry = self.function_defs.entry(name).or_default();
             for idx in defs {
@@ -188,6 +183,7 @@ mod tests {
             end_line: line,
             end_col: 10,
             children: vec![],
+            source_file: None,
         }
     }
 
@@ -202,16 +198,14 @@ mod tests {
             end_line: line,
             end_col: 5,
             children: vec![],
+            source_file: None,
         }
     }
 
     #[test]
     fn test_deduplication_by_name() {
         let mut builder = GraphBuilder::new();
-        let facts = vec![
-            make_func_node("foo", 1),
-            make_func_node("foo", 2), // duplicate
-        ];
+        let facts = vec![make_func_node("foo", 1), make_func_node("foo", 2)];
         builder.ingest_file_facts(&facts);
         assert_eq!(builder.cpg.node_count(), 1);
     }
