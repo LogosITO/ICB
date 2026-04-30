@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Command"],"fn":["build_project_graph","main","parse_language","print_callees","print_callers","print_complexity","print_cycles","print_dead_code","print_functions","print_unused"],"struct":["Cli"]};
+window.SIDEBAR_ITEMS = {"enum":["Command"],"fn":["build_or_load_graph","build_project_graph","main","parse_language","print_callees","print_callers","print_complexity","print_cycles","print_dead_code","print_functions","print_unused"],"struct":["Cli"]};

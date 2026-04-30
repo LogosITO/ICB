@@ -2,48 +2,32 @@
 <a href=#2 id=2 data-nosnippet>2</a>
 <a href=#3 id=3 data-nosnippet>3</a><span class="doccomment">/// A single fact extracted from source code by a language parser.
 <a href=#4 id=4 data-nosnippet>4</a>///
-<a href=#5 id=5 data-nosnippet>5</a>/// `RawNode` is a language-agnostic representation of an AST node. It
+<a href=#5 id=5 data-nosnippet>5</a>/// `RawNode` is a language‑agnostic representation of an AST node. It
 <a href=#6 id=6 data-nosnippet>6</a>/// captures the kind of the node, its location, an optional name, and
-<a href=#7 id=7 data-nosnippet>7</a>/// structural relationships through `children`.
-<a href=#8 id=8 data-nosnippet>8</a>///
-<a href=#9 id=9 data-nosnippet>9</a>/// # Example
-<a href=#10 id=10 data-nosnippet>10</a>///
-<a href=#11 id=11 data-nosnippet>11</a>/// ```rust
-<a href=#12 id=12 data-nosnippet>12</a>/// use icb_common::{Language, NodeKind};
-<a href=#13 id=13 data-nosnippet>13</a>/// use icb_parser::facts::RawNode;
-<a href=#14 id=14 data-nosnippet>14</a>///
-<a href=#15 id=15 data-nosnippet>15</a>/// let node = RawNode {
-<a href=#16 id=16 data-nosnippet>16</a>///     language: Language::Python,
-<a href=#17 id=17 data-nosnippet>17</a>///     kind: NodeKind::Function,
-<a href=#18 id=18 data-nosnippet>18</a>///     name: Some("hello".into()),
-<a href=#19 id=19 data-nosnippet>19</a>///     usr: None,
-<a href=#20 id=20 data-nosnippet>20</a>///     start_line: 1,
-<a href=#21 id=21 data-nosnippet>21</a>///     start_col: 0,
-<a href=#22 id=22 data-nosnippet>22</a>///     end_line: 1,
-<a href=#23 id=23 data-nosnippet>23</a>///     end_col: 10,
-<a href=#24 id=24 data-nosnippet>24</a>///     children: vec![],
-<a href=#25 id=25 data-nosnippet>25</a>/// };
-<a href=#26 id=26 data-nosnippet>26</a>/// ```
-<a href=#27 id=27 data-nosnippet>27</a></span><span class="attr">#[derive(Debug, Clone)]
-<a href=#28 id=28 data-nosnippet>28</a></span><span class="kw">pub struct </span>RawNode {
-<a href=#29 id=29 data-nosnippet>29</a>    <span class="doccomment">/// Programming language of the source file.
-<a href=#30 id=30 data-nosnippet>30</a>    </span><span class="kw">pub </span>language: Language,
-<a href=#31 id=31 data-nosnippet>31</a>    <span class="doccomment">/// Kind of the node (function, class, call, etc.).
-<a href=#32 id=32 data-nosnippet>32</a>    </span><span class="kw">pub </span>kind: NodeKind,
-<a href=#33 id=33 data-nosnippet>33</a>    <span class="doccomment">/// Optional human-readable name (e.g., function name).
-<a href=#34 id=34 data-nosnippet>34</a>    </span><span class="kw">pub </span>name: <span class="prelude-ty">Option</span>&lt;String&gt;,
-<a href=#35 id=35 data-nosnippet>35</a>    <span class="doccomment">/// Optional unique identifier for cross-file references.
-<a href=#36 id=36 data-nosnippet>36</a>    </span><span class="kw">pub </span>usr: <span class="prelude-ty">Option</span>&lt;String&gt;,
-<a href=#37 id=37 data-nosnippet>37</a>    <span class="doccomment">/// 1-based line where this node starts.
-<a href=#38 id=38 data-nosnippet>38</a>    </span><span class="kw">pub </span>start_line: usize,
-<a href=#39 id=39 data-nosnippet>39</a>    <span class="doccomment">/// 0-based column where this node starts.
-<a href=#40 id=40 data-nosnippet>40</a>    </span><span class="kw">pub </span>start_col: usize,
-<a href=#41 id=41 data-nosnippet>41</a>    <span class="doccomment">/// 1-based line where this node ends.
-<a href=#42 id=42 data-nosnippet>42</a>    </span><span class="kw">pub </span>end_line: usize,
-<a href=#43 id=43 data-nosnippet>43</a>    <span class="doccomment">/// 0-based column where this node ends.
-<a href=#44 id=44 data-nosnippet>44</a>    </span><span class="kw">pub </span>end_col: usize,
-<a href=#45 id=45 data-nosnippet>45</a>    <span class="doccomment">/// Indices of child `RawNode`s (in the same file) that are directly
-<a href=#46 id=46 data-nosnippet>46</a>    /// nested under this node according to the AST.
-<a href=#47 id=47 data-nosnippet>47</a>    </span><span class="kw">pub </span>children: Vec&lt;usize&gt;,
-<a href=#48 id=48 data-nosnippet>48</a>}
+<a href=#7 id=7 data-nosnippet>7</a>/// structural relationships through `children`. The `source_file` field
+<a href=#8 id=8 data-nosnippet>8</a>/// allows the graph builder to filter out external headers when desired.
+<a href=#9 id=9 data-nosnippet>9</a></span><span class="attr">#[derive(Debug, Clone)]
+<a href=#10 id=10 data-nosnippet>10</a></span><span class="kw">pub struct </span>RawNode {
+<a href=#11 id=11 data-nosnippet>11</a>    <span class="doccomment">/// Programming language of the source file.
+<a href=#12 id=12 data-nosnippet>12</a>    </span><span class="kw">pub </span>language: Language,
+<a href=#13 id=13 data-nosnippet>13</a>    <span class="doccomment">/// Kind of the node (function, class, call, etc.).
+<a href=#14 id=14 data-nosnippet>14</a>    </span><span class="kw">pub </span>kind: NodeKind,
+<a href=#15 id=15 data-nosnippet>15</a>    <span class="doccomment">/// Optional human‑readable name (e.g., function name).
+<a href=#16 id=16 data-nosnippet>16</a>    </span><span class="kw">pub </span>name: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#17 id=17 data-nosnippet>17</a>    <span class="doccomment">/// Optional unique symbol identifier for cross‑file references.
+<a href=#18 id=18 data-nosnippet>18</a>    </span><span class="kw">pub </span>usr: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#19 id=19 data-nosnippet>19</a>    <span class="doccomment">/// 1‑based line where this node starts.
+<a href=#20 id=20 data-nosnippet>20</a>    </span><span class="kw">pub </span>start_line: usize,
+<a href=#21 id=21 data-nosnippet>21</a>    <span class="doccomment">/// 0‑based column where this node starts.
+<a href=#22 id=22 data-nosnippet>22</a>    </span><span class="kw">pub </span>start_col: usize,
+<a href=#23 id=23 data-nosnippet>23</a>    <span class="doccomment">/// 1‑based line where this node ends.
+<a href=#24 id=24 data-nosnippet>24</a>    </span><span class="kw">pub </span>end_line: usize,
+<a href=#25 id=25 data-nosnippet>25</a>    <span class="doccomment">/// 0‑based column where this node ends.
+<a href=#26 id=26 data-nosnippet>26</a>    </span><span class="kw">pub </span>end_col: usize,
+<a href=#27 id=27 data-nosnippet>27</a>    <span class="doccomment">/// Indices of child `RawNode`s (in the same file) that are directly
+<a href=#28 id=28 data-nosnippet>28</a>    /// nested under this node according to the AST.
+<a href=#29 id=29 data-nosnippet>29</a>    </span><span class="kw">pub </span>children: Vec&lt;usize&gt;,
+<a href=#30 id=30 data-nosnippet>30</a>    <span class="doccomment">/// Path to the source file, if known. Used for filtering system headers.
+<a href=#31 id=31 data-nosnippet>31</a>    </span><span class="kw">pub </span>source_file: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<a href=#32 id=32 data-nosnippet>32</a>}
 </code></pre></div></section></main></body></html>

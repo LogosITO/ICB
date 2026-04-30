@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["analysis","builder","graph","query","visualizer"]};
+window.SIDEBAR_ITEMS = {"mod":["analysis","builder","cache","graph","query","visualizer"]};

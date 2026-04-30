@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"enum":["Edge"],"struct":["CodePropertyGraph","Node"],"type":["CpgGraph"]};
+window.SIDEBAR_ITEMS = {"enum":["Edge"],"struct":["CodePropertyGraph","GraphData","Node"],"type":["CpgGraph"]};
