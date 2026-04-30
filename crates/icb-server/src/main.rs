@@ -179,6 +179,7 @@ struct GraphQuery {
     kind: Option<String>,
     max_nodes: Option<usize>,
     focus: Option<String>,
+    depth: Option<usize>,
     show_cycles: Option<bool>,
     show_dead: Option<bool>,
     entries: Option<String>,
@@ -205,16 +206,18 @@ async fn get_graph(
         kind,
         max_nodes,
         focus,
+        depth,
         show_cycles,
         show_dead,
         entries,
     } = query.into_inner();
     let max = max_nodes.unwrap_or(200);
+    let d = depth.unwrap_or(1);
     let show_cycles = show_cycles.unwrap_or(false);
     let show_dead = show_dead.unwrap_or(false);
 
     let filtered = if let Some(ref func) = focus {
-        focal_graph(&graph, func, max)
+        focal_graph(&graph, func, max, d)
     } else {
         subgraph_by_kind(&graph, kind.as_deref(), max)
     };
@@ -345,68 +348,81 @@ fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
-fn focal_graph(cpg: &CodePropertyGraph, func_name: &str, max_nodes: usize) -> GraphData {
+/// Build a subgraph centered on `func_name` with neighbours up to `depth` hops.
+fn focal_graph(
+    cpg: &CodePropertyGraph,
+    func_name: &str,
+    max_nodes: usize,
+    depth: usize,
+) -> GraphData {
     let mut included = HashSet::new();
-    let mut selected_nodes = Vec::new();
-    let mut selected_edges = Vec::new();
+    let mut frontier = Vec::new();
 
-    let target_indices: Vec<usize> = cpg
-        .graph
-        .node_indices()
-        .filter(|&idx| {
-            let node = &cpg.graph[idx];
-            (node.kind == icb_common::NodeKind::Function) && node.name.as_deref() == Some(func_name)
-        })
-        .map(|idx| idx.index())
-        .collect();
+    // Initial seed nodes
+    for idx in cpg.graph.node_indices() {
+        let node = &cpg.graph[idx];
+        if (node.kind == icb_common::NodeKind::Function || node.kind == icb_common::NodeKind::Class)
+            && node.name.as_deref() == Some(func_name)
+        {
+            included.insert(idx.index());
+            frontier.push(idx);
+        }
+    }
 
-    if target_indices.is_empty() {
+    if included.is_empty() {
         return GraphData {
             nodes: vec![],
             edges: vec![],
         };
     }
 
-    for &tgt_idx in &target_indices {
-        included.insert(tgt_idx);
-    }
-
-    for &tgt_idx in &target_indices {
-        let tgt_node = petgraph::stable_graph::NodeIndex::new(tgt_idx);
-        for edge_ref in cpg.graph.edges(tgt_node) {
-            if *edge_ref.weight() == Edge::Call {
-                included.insert(edge_ref.source().index());
-                included.insert(edge_ref.target().index());
+    // Expand for `depth` hops
+    for _ in 0..depth {
+        let mut next_frontier = Vec::new();
+        for &node_idx in &frontier {
+            for edge_ref in cpg.graph.edges(node_idx) {
+                if *edge_ref.weight() == Edge::Call {
+                    let other = edge_ref.target();
+                    if !included.contains(&other.index()) {
+                        included.insert(other.index());
+                        next_frontier.push(other);
+                    }
+                }
+            }
+            for edge_ref in cpg
+                .graph
+                .edges_directed(node_idx, petgraph::Direction::Incoming)
+            {
+                if *edge_ref.weight() == Edge::Call {
+                    let other = edge_ref.source();
+                    if !included.contains(&other.index()) {
+                        included.insert(other.index());
+                        next_frontier.push(other);
+                    }
+                }
             }
         }
-        for edge_ref in cpg
-            .graph
-            .edges_directed(tgt_node, petgraph::Direction::Incoming)
-        {
-            if *edge_ref.weight() == Edge::Call {
-                included.insert(edge_ref.source().index());
-                included.insert(edge_ref.target().index());
-            }
+        frontier = next_frontier;
+        if included.len() >= max_nodes {
+            break;
         }
     }
 
+    // Limit total nodes
     if included.len() > max_nodes {
         let mut limited = HashSet::new();
-        for &tgt_idx in &target_indices {
-            limited.insert(tgt_idx);
-        }
+        // Always keep the seed nodes
         for &idx in &included {
             if limited.len() >= max_nodes {
                 break;
             }
-            if !limited.contains(&idx) {
-                limited.insert(idx);
-            }
+            limited.insert(idx);
         }
         included = limited;
     }
 
     let mut index_map = std::collections::HashMap::new();
+    let mut selected_nodes = Vec::new();
     for &idx in &included {
         let node = &cpg.graph[petgraph::stable_graph::NodeIndex::new(idx)];
         let new_idx = selected_nodes.len();
@@ -414,6 +430,7 @@ fn focal_graph(cpg: &CodePropertyGraph, func_name: &str, max_nodes: usize) -> Gr
         index_map.insert(idx, new_idx);
     }
 
+    let mut selected_edges = Vec::new();
     for &src_idx in &included {
         let src_node = petgraph::stable_graph::NodeIndex::new(src_idx);
         for edge_ref in cpg.graph.edges(src_node) {
