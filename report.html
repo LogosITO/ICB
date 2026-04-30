@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB Report - test-projects/cpp_demo</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background: #0d1117;
+            color: #e6edf3;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .header {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            gap: 24px;
+            flex-wrap: wrap;
+        }
+        .logo { font-weight: 700; color: #58a6ff; font-size: 1.2rem; }
+        .stat-badge {
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 6px 14px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .stat-badge .value { font-weight: 700; font-size: 1.2rem; color: #58a6ff; }
+        .stat-badge .label { font-size: 0.7rem; color: #8b949e; text-transform: uppercase; }
+        .main { flex: 1; position: relative; }
+        #graphCanvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+            cursor: grab;
+        }
+        #graphCanvas:active { cursor: grabbing; }
+        .detail-panel {
+            position: absolute;
+            top: 0; right: 0;
+            width: 360px;
+            height: 100%;
+            background: #161b22;
+            border-left: 1px solid #30363d;
+            padding: 20px;
+            transform: translateX(100%);
+            transition: transform 0.3s ease;
+            z-index: 10;
+            box-shadow: -4px 0 20px rgba(0,0,0,0.5);
+            overflow-y: auto;
+        }
+        .detail-panel.open { transform: translateX(0); }
+        .detail-panel h3 { color: #58a6ff; }
+        .detail-panel p { margin: 8px 0; font-size: 0.9rem; }
+        .close-btn {
+            background: none;
+            border: none;
+            color: #8b949e;
+            font-size: 1.5rem;
+            cursor: pointer;
+            float: right;
+        }
+    </style>
+</head>
+<body>
+<div class="header">
+    <span class="logo">ICB Report</span>
+    <div id="stats" style="display: flex; gap: 12px;"></div>
+</div>
+<div class="main">
+    <canvas id="graphCanvas"></canvas>
+    <div class="detail-panel" id="detailPanel">
+        <button class="close-btn" id="closeBtn">×</button>
+        <h3 id="detailName"></h3>
+        <p id="detailKind"></p>
+        <p id="detailLine"></p>
+        <p id="detailConnections"></p>
+        <p id="detailCycle"></p>
+        <p id="detailDead"></p>
+    </div>
+</div>
+
+<script>
+    // ===== INLINE GRAPH RENDERER =====
+    const STATS = {"complex_count":1,"cycle_count":0,"dead_count":2,"project":"test-projects/cpp_demo","total_calls":0,"total_classes":0,"total_functions":3};
+    const GRAPH = {"nodes":[{"kind":"Function","name":"main","usr":"{\"complexity\":null,\"is_cycle\":false,\"is_dead\":false}","start_line":3,"end_line":7},{"kind":"Variable","name":"x","usr":"{\"complexity\":null,\"is_cycle\":false,\"is_dead\":false}","start_line":4,"end_line":4},{"kind":"Function","name":"add","usr":"{\"complexity\":31,\"is_cycle\":false,\"is_dead\":true}","start_line":4,"end_line":6},{"kind":"Parameter","name":"a","usr":"{\"complexity\":null,\"is_cycle\":false,\"is_dead\":false}","start_line":4,"end_line":4},{"kind":"Parameter","name":"b","usr":"{\"complexity\":null,\"is_cycle\":false,\"is_dead\":false}","start_line":4,"end_line":4},{"kind":"Function","name":"print_result","usr":"{\"complexity\":null,\"is_cycle\":false,\"is_dead\":true}","start_line":8,"end_line":10},{"kind":"Parameter","name":"value","usr":"{\"complexity\":null,\"is_cycle\":false,\"is_dead\":false}","start_line":8,"end_line":8}],"edges":[[0,1,"AstChild"],[2,3,"AstChild"],[3,4,"AstChild"],[4,5,"AstChild"],[5,6,"AstChild"]]};
+
+    // ---------- Force-directed layout ----------
+    class ForceLayout {
+        constructor(nodes, edges) {
+            this.nodes = nodes;
+            this.edges = edges;
+            this.iterations = 0;
+            this.maxIterations = 300;
+            this.running = false;
+            this.alpha = 1.0;
+            this.alphaDecay = 0.998;
+            this.repulsion = 500;
+            this.attractionLength = 80;
+            this.damping = 0.9;
+            const centerX = 500;
+            const centerY = 500;
+            const radius = 300;
+            nodes.forEach((n, i) => {
+                if (!n.x || !n.y) {
+                    const angle = (2 * Math.PI * i) / nodes.length;
+                    n.x = centerX + radius * Math.cos(angle);
+                    n.y = centerY + radius * Math.sin(angle);
+                }
+                n.vx = 0;
+                n.vy = 0;
+                n.fx = 0;
+                n.fy = 0;
+            });
+        }
+
+        step() {
+            if (!this.running || this.alpha < 0.01) {
+                this.running = false;
+                return false;
+            }
+            const n = this.nodes.length;
+            for (let i = 0; i < n; i++) {
+                let fx = 0, fy = 0;
+                for (let j = 0; j < n; j++) {
+                    if (i === j) continue;
+                    let dx = this.nodes[i].x - this.nodes[j].x;
+                    let dy = this.nodes[i].y - this.nodes[j].y;
+                    let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                    let force = this.repulsion / (dist * dist);
+                    fx += (dx / dist) * force;
+                    fy += (dy / dist) * force;
+                }
+                this.nodes[i].fx = fx;
+                this.nodes[i].fy = fy;
+            }
+            for (const e of this.edges) {
+                let src = this.nodes[e[0]];
+                let tgt = this.nodes[e[1]];
+                let dx = tgt.x - src.x;
+                let dy = tgt.y - src.y;
+                let dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                let force = (dist - this.attractionLength) / dist * 0.5;
+                let fx = dx * force;
+                let fy = dy * force;
+                src.fx += fx;
+                src.fy += fy;
+                tgt.fx -= fx;
+                tgt.fy -= fy;
+            }
+            for (const node of this.nodes) {
+                node.vx = (node.vx + node.fx) * this.damping;
+                node.vy = (node.vy + node.fy) * this.damping;
+                node.x += node.vx;
+                node.y += node.vy;
+                node.fx = 0;
+                node.fy = 0;
+            }
+            this.alpha *= this.alphaDecay;
+            this.iterations++;
+            return true;
+        }
+
+        start() {
+            this.running = true;
+        }
+
+        stop() {
+            this.running = false;
+        }
+    }
+
+    // ---------- Global variables ----------
+    let offsetX = 0, offsetY = 0;
+    let scale = 0.5;
+    let isPanning = false;
+    let lastMouseX = 0, lastMouseY = 0;
+    let highlightNode = null;
+    let nodes = [];
+    let edges = [];
+    let layout;
+    let canvas, ctx;
+    let baseRadius = 5;
+
+    // ---------- Drawing ----------
+    function draw() {
+        if (!ctx) return;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.save();
+        ctx.translate(offsetX, offsetY);
+        ctx.scale(scale, scale);
+
+        for (const e of edges) {
+            const src = nodes[e[0]];
+            const tgt = nodes[e[1]];
+            ctx.beginPath();
+            ctx.moveTo(src.x, src.y);
+            ctx.lineTo(tgt.x, tgt.y);
+            ctx.strokeStyle = 'rgba(139,148,158,0.2)';
+            ctx.lineWidth = 0.5;
+            ctx.stroke();
+        }
+
+        for (const node of nodes) {
+            ctx.beginPath();
+            ctx.arc(node.x, node.y, node.radius, 0, 2 * Math.PI);
+            ctx.fillStyle = node.color;
+            ctx.fill();
+            if (highlightNode === node.id) {
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        }
+        ctx.restore();
+    }
+
+    // ---------- Detail panel ----------
+    function showDetail(node) {
+        document.getElementById('detailName').textContent = node.label;
+        document.getElementById('detailKind').textContent = `Type: ${node.kind}`;
+        document.getElementById('detailLine').textContent = `Line: ${node.line}`;
+        document.getElementById('detailCycle').textContent = `Cycle: ${node.isCycle ? 'Yes' : 'No'}`;
+        document.getElementById('detailDead').textContent = `Dead code: ${node.isDead ? 'Yes' : 'No'}`;
+        const edgeCount = edges.filter(e => e[0] === node.id || e[1] === node.id).length;
+        document.getElementById('detailConnections').textContent = `Connections: ${edgeCount}`;
+        document.getElementById('detailPanel').classList.add('open');
+    }
+
+    // ---------- Stats ----------
+    function renderStats() {
+        const statsContainer = document.getElementById('stats');
+        const statsItems = [
+            { v: STATS.total_functions, l: 'Functions' },
+            { v: STATS.total_classes, l: 'Classes' },
+            { v: STATS.total_calls, l: 'Calls' },
+            { v: STATS.cycle_count, l: 'Cycles' },
+            { v: STATS.dead_count, l: 'Dead' },
+            { v: STATS.complex_count, l: 'Complex' }
+        ];
+        statsContainer.innerHTML = statsItems.map(s =>
+            `<div class="stat-badge"><span class="value">${s.v}</span><span class="label">${s.l}</span></div>`
+        ).join('');
+    }
+
+    // ---------- Main initialization ----------
+    function initGraph() {
+        canvas = document.getElementById('graphCanvas');
+        ctx = canvas.getContext('2d');
+        const container = canvas.parentElement;
+
+        function resize() {
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            draw();
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // Адаптивный радиус узлов
+        const nodeCount = GRAPH.nodes.length;
+        if (nodeCount <= 10) {
+            baseRadius = 12;
+        } else if (nodeCount <= 50) {
+            baseRadius = 8;
+        } else if (nodeCount <= 200) {
+            baseRadius = 6;
+        } else if (nodeCount <= 500) {
+            baseRadius = 4;
+        } else {
+            baseRadius = 2.5;
+        }
+
+        const nodeMap = new Map();
+        GRAPH.nodes.forEach((n, idx) => {
+            let extra = {};
+            try { extra = n.usr ? JSON.parse(n.usr) : {}; } catch(e) {}
+            const nodeObj = {
+                id: idx,
+                label: n.name || '?',
+                kind: n.kind,
+                line: n.start_line,
+                isCycle: !!extra.is_cycle,
+                isDead: !!extra.is_dead,
+                color: extra.is_cycle ? '#f85149' : (extra.is_dead ? '#8b949e' : '#58a6ff'),
+                radius: baseRadius,
+                x: 0, y: 0, vx: 0, vy: 0, fx: 0, fy: 0
+            };
+            nodes.push(nodeObj);
+            nodeMap.set(idx, nodeObj);
+        });
+
+        edges = GRAPH.edges.map(e => [e[0], e[1]]).filter(e =>
+            nodeMap.has(e[0]) && nodeMap.has(e[1])
+        );
+
+        layout = new ForceLayout(nodes, edges);
+        layout.start();
+
+        canvas.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            const zoomFactor = 1.1;
+            const mouseX = e.offsetX;
+            const mouseY = e.offsetY;
+            const oldScale = scale;
+            if (e.deltaY < 0) {
+                scale = Math.min(5, scale * zoomFactor);
+            } else {
+                scale = Math.max(0.1, scale / zoomFactor);
+            }
+            offsetX = mouseX - (mouseX - offsetX) * (scale / oldScale);
+            offsetY = mouseY - (mouseY - offsetY) * (scale / oldScale);
+            draw();
+        });
+
+        canvas.addEventListener('mousedown', (e) => {
+            isPanning = true;
+            lastMouseX = e.offsetX;
+            lastMouseY = e.offsetY;
+        });
+        window.addEventListener('mouseup', () => { isPanning = false; });
+        window.addEventListener('mousemove', (e) => {
+            if (!isPanning) return;
+            const dx = e.offsetX - lastMouseX;
+            const dy = e.offsetY - lastMouseY;
+            offsetX += dx;
+            offsetY += dy;
+            lastMouseX = e.offsetX;
+            lastMouseY = e.offsetY;
+            draw();
+        });
+
+        canvas.addEventListener('click', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left - offsetX) / scale;
+            const mouseY = (e.clientY - rect.top - offsetY) / scale;
+            for (const node of nodes) {
+                const dx = node.x - mouseX;
+                const dy = node.y - mouseY;
+                if (Math.sqrt(dx*dx + dy*dy) <= node.radius) {
+                    showDetail(node);
+                    return;
+                }
+            }
+        });
+
+        canvas.addEventListener('mousemove', (e) => {
+            if (isPanning) return;
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = (e.clientX - rect.left - offsetX) / scale;
+            const mouseY = (e.clientY - rect.top - offsetY) / scale;
+            let newHighlight = null;
+            for (const node of nodes) {
+                const dx = node.x - mouseX;
+                const dy = node.y - mouseY;
+                if (Math.sqrt(dx*dx + dy*dy) <= node.radius + 2) {
+                    newHighlight = node.id;
+                    break;
+                }
+            }
+            if (newHighlight !== highlightNode) {
+                highlightNode = newHighlight;
+                draw();
+            }
+        });
+
+        document.getElementById('closeBtn').addEventListener('click', () => {
+            document.getElementById('detailPanel').classList.remove('open');
+        });
+
+        function animate() {
+            if (layout.running) {
+                layout.step();
+                draw();
+                requestAnimationFrame(animate);
+            }
+        }
+        requestAnimationFrame(animate);
+        draw();
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        renderStats();
+        initGraph();
+    });
+</script>
+</body>
+</html>

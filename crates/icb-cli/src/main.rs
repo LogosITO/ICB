@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use icb_common::Language;
@@ -16,7 +17,6 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Command {
-    /// Build Code Property Graph and show basic statistics.
     Analyze {
         path: PathBuf,
         #[arg(short, long)]
@@ -27,8 +27,9 @@ enum Command {
         cpp_std: String,
         #[arg(long)]
         cache: Option<PathBuf>,
+        #[arg(long)]
+        no_system_headers: bool,
     },
-    /// Run queries on a project directory.
     Query {
         project: PathBuf,
         #[arg(short, long, default_value = "python")]
@@ -59,6 +60,41 @@ enum Command {
         threshold: usize,
         #[arg(long)]
         cache: Option<PathBuf>,
+        #[arg(long)]
+        no_system_headers: bool,
+    },
+    /// Generate static HTML report with graph and analytics.
+    Report {
+        project: PathBuf,
+        #[arg(short, long)]
+        language: String,
+        #[arg(long)]
+        compile_commands: Option<PathBuf>,
+        #[arg(long, default_value = "c++17")]
+        cpp_std: String,
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[arg(long)]
+        no_system_headers: bool,
+        #[arg(short, long, default_value = "report.html")]
+        output: PathBuf,
+    },
+    /// Compare two project versions and generate diff HTML report.
+    Diff {
+        old_project: PathBuf,
+        new_project: PathBuf,
+        #[arg(short, long)]
+        language: String,
+        #[arg(long)]
+        compile_commands: Option<PathBuf>,
+        #[arg(long, default_value = "c++17")]
+        cpp_std: String,
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        #[arg(long)]
+        no_system_headers: bool,
+        #[arg(short, long, default_value = "diff.html")]
+        output: PathBuf,
     },
 }
 
@@ -74,17 +110,20 @@ fn main() -> anyhow::Result<()> {
             compile_commands,
             cpp_std,
             cache: cache_path,
+            no_system_headers,
         } => {
             let lang = parse_language(&language)?;
-            let (cpg, _files) = build_or_load_graph(
-                &manager,
+            let opts = BuildOptions {
+                manager: &manager,
                 lang,
-                &path,
-                compile_commands.as_deref(),
-                &cpp_std,
-                cache_path.as_deref(),
-                true,
-            )?;
+                path: &path,
+                compile_commands: compile_commands.as_deref(),
+                cpp_std: &cpp_std,
+                cache_path: cache_path.as_deref(),
+                show_progress: true,
+                no_system_headers,
+            };
+            let (cpg, _) = build_or_load_graph(opts)?;
             println!(
                 "Graph: {} nodes, {} edges",
                 cpg.node_count(),
@@ -107,18 +146,20 @@ fn main() -> anyhow::Result<()> {
             complexity,
             threshold,
             cache: cache_path,
+            no_system_headers,
         } => {
             let lang = parse_language(&language)?;
-            let (cpg, _files) = build_or_load_graph(
-                &manager,
+            let opts = BuildOptions {
+                manager: &manager,
                 lang,
-                &project,
-                compile_commands.as_deref(),
-                &cpp_std,
-                cache_path.as_deref(),
-                false,
-            )?;
-
+                path: &project,
+                compile_commands: compile_commands.as_deref(),
+                cpp_std: &cpp_std,
+                cache_path: cache_path.as_deref(),
+                show_progress: false,
+                no_system_headers,
+            };
+            let (cpg, _) = build_or_load_graph(opts)?;
             if functions {
                 print_functions(&cpg);
             }
@@ -146,9 +187,81 @@ fn main() -> anyhow::Result<()> {
                 print_complexity(&cpg, threshold);
             }
         }
+        Command::Report {
+            project,
+            language,
+            compile_commands,
+            cpp_std,
+            cache: cache_path,
+            no_system_headers,
+            output,
+        } => {
+            let lang = parse_language(&language)?;
+            let opts = BuildOptions {
+                manager: &manager,
+                lang,
+                path: &project,
+                compile_commands: compile_commands.as_deref(),
+                cpp_std: &cpp_std,
+                cache_path: cache_path.as_deref(),
+                show_progress: true,
+                no_system_headers,
+            };
+            let (cpg, _) = build_or_load_graph(opts)?;
+            let html = icb_report::report::generate_report(&cpg, &project.display().to_string())?;
+            fs::write(&output, html)?;
+            println!("Report written to {:?}", output);
+        }
+        Command::Diff {
+            old_project,
+            new_project,
+            language,
+            compile_commands,
+            cpp_std,
+            cache: cache_path,
+            no_system_headers,
+            output,
+        } => {
+            let lang = parse_language(&language)?;
+            let opts_old = BuildOptions {
+                manager: &manager,
+                lang,
+                path: &old_project,
+                compile_commands: compile_commands.as_deref(),
+                cpp_std: &cpp_std,
+                cache_path: cache_path.as_deref(),
+                show_progress: true,
+                no_system_headers,
+            };
+            let (old_cpg, _) = build_or_load_graph(opts_old)?;
+            let opts_new = BuildOptions {
+                manager: &manager,
+                lang,
+                path: &new_project,
+                compile_commands: compile_commands.as_deref(),
+                cpp_std: &cpp_std,
+                cache_path: cache_path.as_deref(),
+                show_progress: true,
+                no_system_headers,
+            };
+            let (new_cpg, _) = build_or_load_graph(opts_new)?;
+            let html = icb_report::diff::generate_diff(&old_cpg, &new_cpg, "Project")?;
+            fs::write(&output, html)?;
+            println!("Diff written to {:?}", output);
+        }
     }
-
     Ok(())
+}
+
+struct BuildOptions<'a> {
+    manager: &'a ParserManager,
+    lang: Language,
+    path: &'a Path,
+    compile_commands: Option<&'a Path>,
+    cpp_std: &'a str,
+    cache_path: Option<&'a Path>,
+    show_progress: bool,
+    no_system_headers: bool,
 }
 
 fn parse_language(s: &str) -> anyhow::Result<Language> {
@@ -162,132 +275,100 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
 }
 
 fn build_or_load_graph(
-    manager: &ParserManager,
-    lang: Language,
-    path: &Path,
-    compile_commands: Option<&Path>,
-    cpp_std: &str,
-    cache_path: Option<&Path>,
-    show_progress: bool,
+    opts: BuildOptions,
 ) -> anyhow::Result<(icb_graph::graph::CodePropertyGraph, usize)> {
-    if let Some(cache_file) = cache_path {
+    if let Some(cache_file) = opts.cache_path {
         if cache_file.exists() {
-            log::info!("Loading cached graph from {:?}", cache_file);
-            match cache::load_graph(cache_file) {
-                Ok(cpg) => {
-                    log::info!(
-                        "Using cached graph ({} nodes, {} edges)",
-                        cpg.node_count(),
-                        cpg.edge_count()
-                    );
-                    return Ok((cpg, 0));
-                }
-                Err(e) => log::warn!("Failed to load cache: {}", e),
+            if let Ok(cpg) = cache::load_graph(cache_file) {
+                return Ok((cpg, 0));
             }
         }
     }
-
-    let (cpg, files_count) = build_project_graph(
-        manager,
-        lang,
-        path,
-        compile_commands,
-        cpp_std,
-        show_progress,
+    let file_facts = build_file_facts(
+        opts.manager,
+        opts.lang,
+        opts.path,
+        opts.compile_commands,
+        opts.cpp_std,
+        opts.no_system_headers,
     )?;
-
-    if let Some(cache_file) = cache_path {
+    let count = file_facts.len();
+    if opts.show_progress {
+        println!("Parsed {} files", count);
+    }
+    let mut builder = GraphBuilder::new();
+    for (_, facts) in file_facts {
+        let mut local = GraphBuilder::new();
+        local.ingest_file_facts(&facts);
+        builder.merge(local);
+    }
+    builder.resolve_calls();
+    let cpg = builder.cpg;
+    if let Some(cache_file) = opts.cache_path {
         if let Err(e) = cache::save_graph(&cpg, cache_file) {
             log::warn!("Failed to save cache: {}", e);
-        } else {
-            log::info!("Graph cached to {:?}", cache_file);
         }
     }
-
-    Ok((cpg, files_count))
+    Ok((cpg, count))
 }
 
-fn build_project_graph(
+fn build_file_facts(
     manager: &ParserManager,
     lang: Language,
     path: &Path,
     compile_commands: Option<&Path>,
     cpp_std: &str,
-    show_progress: bool,
-) -> anyhow::Result<(icb_graph::graph::CodePropertyGraph, usize)> {
-    let file_facts: Vec<(String, Vec<icb_parser::facts::RawNode>)> = if lang == Language::Cpp {
+    no_system_headers: bool,
+) -> anyhow::Result<Vec<(String, Vec<icb_parser::facts::RawNode>)>> {
+    let allow_system = !no_system_headers;
+    if lang == Language::Cpp {
         if let Some(cdb) = compile_commands {
             let cdb = cdb.canonicalize()?;
             let base_dir = cdb.parent().unwrap_or(Path::new("."));
-            icb_clang::project::parse_project(&cdb, base_dir, true, true)?
+            Ok(icb_clang::project::parse_project(
+                &cdb,
+                base_dir,
+                true,
+                allow_system,
+            )?)
         } else if path.is_file() {
             let source = std::fs::read_to_string(path)?;
             let args = vec![format!("-std={}", cpp_std)];
             let facts = icb_clang::parser::parse_cpp_file(
                 &source,
                 &args,
-                Some(
-                    path.file_name()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap_or("unknown"),
-                ),
-                true,
+                Some(path.to_str().unwrap()),
+                allow_system,
             )?;
-            vec![(
+            Ok(vec![(
                 path.file_name()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .into_owned(),
                 facts,
-            )]
+            )])
         } else {
-            let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::project::parse_directory(path, &args, true, None, true)?
+            Ok(icb_clang::project::parse_directory(
+                path,
+                &[format!("-std={}", cpp_std)],
+                true,
+                None,
+                allow_system,
+            )?)
         }
     } else if path.is_dir() {
-        manager.parse_directory(lang, path)?
+        Ok(manager.parse_directory(lang, path)?)
     } else {
         let source = std::fs::read_to_string(path)?;
-        let facts = if lang == Language::Cpp {
-            let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::parser::parse_cpp_file(
-                &source,
-                &args,
-                Some(
-                    path.file_name()
-                        .unwrap_or_default()
-                        .to_str()
-                        .unwrap_or("unknown"),
-                ),
-                true,
-            )?
-        } else {
-            manager.parse_file(lang, &source)?
-        };
-        vec![(
+        let facts = manager.parse_file(lang, &source)?;
+        Ok(vec![(
             path.file_name()
                 .unwrap_or_default()
                 .to_string_lossy()
                 .into_owned(),
             facts,
-        )]
-    };
-
-    let files_count = file_facts.len();
-    if show_progress {
-        println!("Parsed {} files", files_count);
+        )])
     }
-
-    let mut global_builder = GraphBuilder::new();
-    for (_, facts) in file_facts {
-        let mut local = GraphBuilder::new();
-        local.ingest_file_facts(&facts);
-        global_builder.merge(local);
-    }
-    global_builder.resolve_calls();
-
-    Ok((global_builder.cpg, files_count))
 }
 
 fn print_functions(cpg: &icb_graph::graph::CodePropertyGraph) {
@@ -301,7 +382,6 @@ fn print_functions(cpg: &icb_graph::graph::CodePropertyGraph) {
         );
     }
 }
-
 fn print_callers(cpg: &icb_graph::graph::CodePropertyGraph, target: &str) {
     let callers = query::callers_of(cpg, target);
     println!("Callers of '{}' ({})", target, callers.len());
@@ -313,7 +393,6 @@ fn print_callers(cpg: &icb_graph::graph::CodePropertyGraph, target: &str) {
         );
     }
 }
-
 fn print_callees(cpg: &icb_graph::graph::CodePropertyGraph, target: &str) {
     let callees = query::callees_of(cpg, target);
     println!("Callees of '{}' ({})", target, callees.len());
@@ -325,7 +404,6 @@ fn print_callees(cpg: &icb_graph::graph::CodePropertyGraph, target: &str) {
         );
     }
 }
-
 fn print_unused(cpg: &icb_graph::graph::CodePropertyGraph) {
     let unused = query::unused_functions(cpg);
     println!("Unused functions ({})", unused.len());
@@ -337,7 +415,6 @@ fn print_unused(cpg: &icb_graph::graph::CodePropertyGraph) {
         );
     }
 }
-
 fn print_cycles(cpg: &icb_graph::graph::CodePropertyGraph) {
     let cycles = analysis::detect_call_cycles(cpg);
     println!("Call cycles ({})", cycles.len());
@@ -345,7 +422,6 @@ fn print_cycles(cpg: &icb_graph::graph::CodePropertyGraph) {
         println!("  Length {}: {}", cycle.length, cycle.functions.join(", "));
     }
 }
-
 fn print_dead_code(cpg: &icb_graph::graph::CodePropertyGraph, entries: &[String]) {
     let dead = analysis::detect_dead_code(cpg, entries);
     println!("Dead code from entries {:?} ({})", entries, dead.len());
@@ -357,7 +433,6 @@ fn print_dead_code(cpg: &icb_graph::graph::CodePropertyGraph, entries: &[String]
         );
     }
 }
-
 fn print_complexity(cpg: &icb_graph::graph::CodePropertyGraph, threshold: usize) {
     let complex = analysis::detect_complex_functions(cpg, threshold);
     println!(

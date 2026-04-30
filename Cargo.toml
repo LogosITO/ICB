@@ -3,10 +3,11 @@ resolver = "2"
 members = [
     "crates/icb-common",
     "crates/icb-parser",
-    "crates/icb-clang",
     "crates/icb-graph",
+    "crates/icb-clang",
     "crates/icb-cli",
     "crates/icb-server",
+    "crates/icb-report",
 ]
 
 [workspace.dependencies]
