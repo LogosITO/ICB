@@ -9,18 +9,21 @@
 //! # Example (single file)
 //!
 //! ```rust,no_run
-//! use icb_clang::parse_cpp_file;
-//! let facts = parse_cpp_file("int main() { return 0; }", &[]).unwrap();
+//! use icb_clang::parser::parse_cpp_file;
+//! let facts = parse_cpp_file("int main() { return 0; }", &[], Some("main.cpp"), true).unwrap();
 //! assert!(!facts.is_empty());
 //! ```
 //!
 //! # Example (project via compile_commands.json)
 //!
 //! ```rust,no_run
-//! use icb_clang::parse_project;
+//! use std::path::Path;
+//! use icb_clang::project::parse_project;
 //! let all_files = parse_project(
-//!     "path/to/compile_commands.json",
-//!     true,   // parallel
+//!     Path::new("compile_commands.json"),
+//!     Path::new("."),
+//!     true,
+//!     true,
 //! ).unwrap();
 //! ```
 
