@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Layout from './components/Layout'
-import GraphViewer from './components/GraphViewer'
+import {GraphViewer} from './components/GraphViewer'
 import Sidebar from './components/Sidebar'
 import NodeDetailPanel from './components/NodeDetailPanel'
 
