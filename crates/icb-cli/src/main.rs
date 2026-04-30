@@ -219,7 +219,7 @@ fn build_project_graph(
         if let Some(cdb) = compile_commands {
             let cdb = cdb.canonicalize()?;
             let base_dir = cdb.parent().unwrap_or(Path::new("."));
-            icb_clang::project::parse_project(&cdb, base_dir, true)?
+            icb_clang::project::parse_project(&cdb, base_dir, true, true)?
         } else if path.is_file() {
             let source = std::fs::read_to_string(path)?;
             let args = vec![format!("-std={}", cpp_std)];
@@ -232,6 +232,7 @@ fn build_project_graph(
                         .to_str()
                         .unwrap_or("unknown"),
                 ),
+                true,
             )?;
             vec![(
                 path.file_name()
@@ -242,7 +243,7 @@ fn build_project_graph(
             )]
         } else {
             let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::project::parse_directory(path, &args, true)?
+            icb_clang::project::parse_directory(path, &args, true, None, true)?
         }
     } else if path.is_dir() {
         manager.parse_directory(lang, path)?
@@ -259,6 +260,7 @@ fn build_project_graph(
                         .to_str()
                         .unwrap_or("unknown"),
                 ),
+                true,
             )?
         } else {
             manager.parse_file(lang, &source)?

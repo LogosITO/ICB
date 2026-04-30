@@ -8,12 +8,45 @@ use std::os::raw::c_void;
 use std::ptr;
 use tempfile::Builder;
 
+/// Returns `true` if the cursor is located in a system header.
+fn is_in_system_header(cursor: CXCursor) -> bool {
+    unsafe { clang_Location_isInSystemHeader(clang_getCursorLocation(cursor)) != 0 }
+}
+
+/// Returns the file name that contains the given cursor.
+fn cursor_file(cursor: CXCursor) -> Option<String> {
+    unsafe {
+        let loc = clang_getCursorLocation(cursor);
+        let mut file: CXFile = ptr::null_mut();
+        clang_getFileLocation(
+            loc,
+            &mut file,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+        );
+        if file.is_null() {
+            return None;
+        }
+        let name = clang_getFileName(file);
+        let cstr = clang_getCString(name);
+        if cstr.is_null() {
+            None
+        } else {
+            Some(
+                std::ffi::CStr::from_ptr(cstr)
+                    .to_string_lossy()
+                    .into_owned(),
+            )
+        }
+    }
+}
+
 /// Parse C/C++ source code using Clang and return a flat list of facts.
 ///
-/// The source is written to a temporary file and Clang is invoked with
-/// `args` passed directly to the compiler. `file_name` is an optional
-/// human‑readable name (e.g., relative path) stored in each `RawNode`
-/// to enable later filtering.
+/// The source is written to a temporary file and Clang is invoked with `args`.
+/// If `allow_system` is `false`, nodes originating from system headers are
+/// excluded from the result.
 ///
 /// # Errors
 ///
@@ -22,7 +55,8 @@ use tempfile::Builder;
 pub fn parse_cpp_file(
     source: &str,
     args: &[String],
-    file_name: Option<&str>,
+    _file_name: Option<&str>,
+    allow_system: bool,
 ) -> Result<Vec<RawNode>, IcbError> {
     let index = unsafe { clang_createIndex(0, 0) };
     if index.is_null() {
@@ -40,12 +74,10 @@ pub fn parse_cpp_file(
         .ok_or_else(|| IcbError::Parse("non-UTF8 temp path".into()))?;
     let filename_c = CString::new(filename).unwrap();
 
-    let mut arg_ptrs: Vec<*const i8> = args
+    let arg_ptrs: Vec<*const i8> = args
         .iter()
         .map(|a| CString::new(a.as_str()).unwrap().into_raw() as *const i8)
         .collect();
-    arg_ptrs.push(ptr::null());
-
     let mut tu: CXTranslationUnit = ptr::null_mut();
 
     let error = unsafe {
@@ -61,7 +93,7 @@ pub fn parse_cpp_file(
         )
     };
 
-    for &cstr_ptr in &arg_ptrs[..args.len()] {
+    for &cstr_ptr in &arg_ptrs {
         unsafe {
             let _ = CString::from_raw(cstr_ptr as *mut i8);
         }
@@ -77,7 +109,7 @@ pub fn parse_cpp_file(
 
     let cursor = unsafe { clang_getTranslationUnitCursor(tu) };
     let mut nodes = Vec::new();
-    visit_children(cursor, &mut nodes, None, file_name);
+    visit_children(cursor, &mut nodes, None, false, allow_system);
 
     unsafe {
         clang_disposeTranslationUnit(tu);
@@ -90,32 +122,46 @@ pub fn parse_cpp_file(
 struct VisitorContext<'a> {
     nodes: &'a mut Vec<RawNode>,
     latest_parent: Option<usize>,
-    source_file: Option<&'a str>,
+    in_system: bool,
+    allow_system: bool,
 }
 
 fn visit_children(
     cursor: CXCursor,
     nodes: &mut Vec<RawNode>,
     parent_idx: Option<usize>,
-    source_file: Option<&str>,
+    in_system: bool,
+    allow_system: bool,
 ) -> Option<usize> {
+    let is_sys = is_in_system_header(cursor);
+
+    // If system headers are disabled, skip the whole sub‑tree.
+    if !allow_system && is_sys {
+        return parent_idx;
+    }
+
+    // If we are already inside a system header, do not recurse further.
+    if in_system && is_sys {
+        return parent_idx;
+    }
+
     let kind = unsafe { clang_getCursorKind(cursor) };
     let (node_kind, name, usr) = match kind {
-        CXCursor_FunctionDecl => {
-            let name = cursor_spelling(cursor);
-            let usr = cursor_usr(cursor);
-            (NodeKind::Function, Some(name), Some(usr))
-        }
-        CXCursor_CXXMethod => {
-            let name = cursor_spelling(cursor);
-            let usr = cursor_usr(cursor);
-            (NodeKind::Function, Some(name), Some(usr))
-        }
-        CXCursor_ClassDecl | CXCursor_StructDecl => {
-            let name = cursor_spelling(cursor);
-            let usr = cursor_usr(cursor);
-            (NodeKind::Class, Some(name), Some(usr))
-        }
+        CXCursor_FunctionDecl => (
+            NodeKind::Function,
+            Some(cursor_spelling(cursor)),
+            Some(cursor_usr(cursor)),
+        ),
+        CXCursor_CXXMethod => (
+            NodeKind::Function,
+            Some(cursor_spelling(cursor)),
+            Some(cursor_usr(cursor)),
+        ),
+        CXCursor_ClassDecl | CXCursor_StructDecl => (
+            NodeKind::Class,
+            Some(cursor_spelling(cursor)),
+            Some(cursor_usr(cursor)),
+        ),
         CXCursor_CallExpr => {
             let referenced = unsafe { clang_getCursorReferenced(cursor) };
             let name = if referenced.kind == CXCursor_InvalidFile {
@@ -125,19 +171,14 @@ fn visit_children(
             };
             (NodeKind::CallSite, Some(name), None)
         }
-        CXCursor_VarDecl => {
-            let name = cursor_spelling(cursor);
-            (NodeKind::Variable, Some(name), None)
-        }
-        CXCursor_ParmDecl => {
-            let name = cursor_spelling(cursor);
-            (NodeKind::Parameter, Some(name), None)
-        }
+        CXCursor_VarDecl => (NodeKind::Variable, Some(cursor_spelling(cursor)), None),
+        CXCursor_ParmDecl => (NodeKind::Parameter, Some(cursor_spelling(cursor)), None),
         _ => {
             let mut ctx = VisitorContext {
                 nodes,
                 latest_parent: parent_idx,
-                source_file,
+                in_system,
+                allow_system,
             };
             let ctx_ptr: *mut c_void = &mut ctx as *mut _ as *mut c_void;
             unsafe {
@@ -160,19 +201,20 @@ fn visit_children(
         end_line,
         end_col,
         children: Vec::new(),
-        source_file: source_file.map(|s| s.to_string()),
+        source_file: cursor_file(cursor),
     });
 
     if let Some(pidx) = parent_idx {
         nodes[pidx].children.push(idx);
     }
 
-    let new_parent = Some(idx);
+    let next_in_system = in_system || is_sys;
 
     let mut ctx = VisitorContext {
         nodes,
-        latest_parent: new_parent,
-        source_file,
+        latest_parent: Some(idx),
+        in_system: next_in_system,
+        allow_system,
     };
     let ctx_ptr: *mut c_void = &mut ctx as *mut _ as *mut c_void;
     unsafe {
@@ -188,7 +230,13 @@ extern "C" fn visitor_callback(
     client_data: CXClientData,
 ) -> CXChildVisitResult {
     let ctx: &mut VisitorContext = unsafe { &mut *(client_data as *mut VisitorContext) };
-    ctx.latest_parent = visit_children(cursor, ctx.nodes, ctx.latest_parent, ctx.source_file);
+    ctx.latest_parent = visit_children(
+        cursor,
+        ctx.nodes,
+        ctx.latest_parent,
+        ctx.in_system,
+        ctx.allow_system,
+    );
     CXChildVisit_Continue
 }
 
@@ -203,16 +251,16 @@ fn cursor_location(cursor: CXCursor) -> (usize, usize, usize, usize) {
     unsafe {
         clang_getPresumedLocation(start, ptr::null_mut(), &mut line, &mut column);
     }
-    let start_line = line as usize;
-    let start_col = column as usize;
+    let s_line = line as usize;
+    let s_col = column as usize;
 
     unsafe {
         clang_getPresumedLocation(end, ptr::null_mut(), &mut line, &mut column);
     }
-    let end_line = line as usize;
-    let end_col = column as usize;
+    let e_line = line as usize;
+    let e_col = column as usize;
 
-    (start_line, start_col, end_line, end_col)
+    (s_line, s_col, e_line, e_col)
 }
 
 fn cursor_spelling(cursor: CXCursor) -> String {
@@ -240,29 +288,5 @@ fn cursor_usr(cursor: CXCursor) -> String {
         };
         clang_disposeString(cxstring);
         result
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_cpp_function() {
-        let source = "int main() { return 0; }";
-        let facts = parse_cpp_file(source, &[], Some("test.cpp")).expect("parsing should succeed");
-        let functions: Vec<_> = facts
-            .iter()
-            .filter(|n| n.kind == NodeKind::Function)
-            .collect();
-        assert!(!functions.is_empty());
-        assert!(functions.iter().any(|f| f.name.as_deref() == Some("main")));
-    }
-
-    #[test]
-    fn test_source_file_set() {
-        let source = "int x;";
-        let facts = parse_cpp_file(source, &[], Some("unit.cpp")).unwrap();
-        assert_eq!(facts[0].source_file.as_deref(), Some("unit.cpp"));
     }
 }

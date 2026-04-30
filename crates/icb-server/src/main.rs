@@ -11,36 +11,28 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
-/// ICB web server for graph visualization.
 #[derive(Parser)]
 #[command(name = "icb-server")]
 #[command(about = "ICB web server for graph visualization")]
 struct Cli {
     #[arg(short, long)]
     project: PathBuf,
-
     #[arg(short, long, default_value = "python")]
     language: String,
-
     #[arg(long)]
     compile_commands: Option<PathBuf>,
-
     #[arg(long, default_value = "c++17")]
     cpp_std: String,
-
     #[arg(long)]
     cache: Option<PathBuf>,
-
     #[arg(short = 'P', long, default_value = "8080")]
     port: u16,
-
-    /// Directory with static files (default: web).
     #[arg(long, default_value = "web")]
     static_dir: PathBuf,
-
-    /// Exclude nodes from external/system headers (based on source_file).
     #[arg(long)]
     no_system_headers: bool,
+    #[arg(long)]
+    max_depth: Option<usize>,
 }
 
 #[actix_web::main]
@@ -55,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         &args.cpp_std,
         args.cache.as_ref(),
         args.no_system_headers,
+        args.max_depth,
     )?;
 
     let graph_data = web::Data::new(Mutex::new(graph));
@@ -90,6 +83,7 @@ fn build_or_load_graph(
     cpp_std: &str,
     cache_path: Option<&PathBuf>,
     no_system_headers: bool,
+    max_depth: Option<usize>,
 ) -> anyhow::Result<CodePropertyGraph> {
     let lang = parse_language(language)?;
     if let Some(cache_file) = cache_path {
@@ -101,15 +95,21 @@ fn build_or_load_graph(
     }
 
     let manager = icb_parser::manager::ParserManager::new();
-    let mut file_facts: Vec<(String, Vec<icb_parser::facts::RawNode>)> = if lang == Language::Cpp {
+    let allow_system = !no_system_headers;
+    let file_facts: Vec<(String, Vec<icb_parser::facts::RawNode>)> = if lang == Language::Cpp {
         if let Some(cdb) = compile_commands {
             let cdb = cdb.canonicalize()?;
             let base_dir = cdb.parent().unwrap_or(Path::new("."));
-            icb_clang::project::parse_project(&cdb, base_dir, true)?
+            icb_clang::project::parse_project(&cdb, base_dir, true, allow_system)?
         } else if project.is_file() {
             let source = std::fs::read_to_string(project)?;
             let args = vec![format!("-std={}", cpp_std)];
-            let facts = icb_clang::parser::parse_cpp_file(&source, &args, Some("main.cpp"))?;
+            let facts = icb_clang::parser::parse_cpp_file(
+                &source,
+                &args,
+                Some(project.to_str().unwrap_or("unknown")),
+                allow_system,
+            )?;
             vec![(
                 project
                     .file_name()
@@ -120,7 +120,7 @@ fn build_or_load_graph(
             )]
         } else {
             let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::project::parse_directory(project, &args, true)?
+            icb_clang::project::parse_directory(project, &args, true, max_depth, allow_system)?
         }
     } else if project.is_dir() {
         manager.parse_directory(lang, project)?
@@ -132,6 +132,7 @@ fn build_or_load_graph(
                 &source,
                 &args,
                 Some(project.to_str().unwrap_or("unknown")),
+                allow_system,
             )?
         } else {
             manager.parse_file(lang, &source)?
@@ -145,24 +146,6 @@ fn build_or_load_graph(
             facts,
         )]
     };
-
-    if no_system_headers {
-        file_facts = file_facts
-            .into_iter()
-            .map(|(path, facts)| {
-                let filtered: Vec<_> = facts
-                    .into_iter()
-                    .filter(|n| {
-                        n.source_file
-                            .as_ref()
-                            .map(|sf| sf.starts_with(path.as_str()))
-                            .unwrap_or(true)
-                    })
-                    .collect();
-                (path, filtered)
-            })
-            .collect();
-    }
 
     let mut builder = icb_graph::builder::GraphBuilder::new();
     for (_, facts) in file_facts {
@@ -191,8 +174,6 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
     }
 }
 
-// ── API types ──
-
 #[derive(Deserialize)]
 struct GraphQuery {
     kind: Option<String>,
@@ -215,8 +196,6 @@ struct NodeDetail {
     is_dead: bool,
 }
 
-// ── API handlers ──
-
 async fn get_graph(
     data: web::Data<Mutex<CodePropertyGraph>>,
     query: web::Query<GraphQuery>,
@@ -230,7 +209,6 @@ async fn get_graph(
         show_dead,
         entries,
     } = query.into_inner();
-
     let max = max_nodes.unwrap_or(200);
     let show_cycles = show_cycles.unwrap_or(false);
     let show_dead = show_dead.unwrap_or(false);
@@ -245,7 +223,6 @@ async fn get_graph(
         return HttpResponse::Ok().json(&filtered);
     }
 
-    // Enrich with metrics
     let mut value = serde_json::to_value(&filtered).unwrap();
     if let Some(nodes) = value.get_mut("nodes").and_then(|n| n.as_array_mut()) {
         let cycle_nodes: HashSet<usize> = if show_cycles {
@@ -340,7 +317,6 @@ async fn get_node_detail(
         .iter()
         .map(|(n, _)| n.name.clone().unwrap_or_default())
         .collect();
-
     let cycles = analysis::detect_call_cycles(&graph);
     let is_cycle = cycles.iter().any(|c| c.functions.contains(&name));
     let dead_entries = vec!["main".to_string()];
@@ -358,11 +334,8 @@ async fn get_node_detail(
         is_cycle,
         is_dead,
     };
-
     HttpResponse::Ok().json(&detail)
 }
-
-// ── Graph helpers ──
 
 fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
     cpg.graph
