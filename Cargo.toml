@@ -12,6 +12,7 @@ members = [
     "benches/icb-graph",
     "benches/icb-server",
     "benches/icb-parser",
+    "scripts/generate-bench-json",
 ]
 
 [workspace.dependencies]

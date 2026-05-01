@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB Benchmarks</title>
+    <style>
+        :root {
+            --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
+            --border: #333; --hover: #222; --header: #888;
+        }
+        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        header { padding: 1.5rem; border-bottom: 1px solid var(--border); }
+        h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
+        nav { display: flex; gap: 1px; margin: 1rem 0; }
+        nav a { padding: 0.5rem 1rem; text-decoration: none; color: var(--text); background: var(--surface); border-bottom: 2px solid transparent; transition: .2s; }
+        nav a.active, nav a:hover { border-bottom-color: var(--accent); color: white; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+        th { color: var(--header); font-weight: 500; }
+        tr:hover { background: var(--hover); }
+        .loader { text-align: center; padding: 3rem; color: var(--header); }
+        .error { color: #c44; }
+        .metric { font-weight: 600; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>ICB Benchmarks</h1>
+    <nav id="tabNav">
+        <a href="#clang" class="active">icb-clang</a>
+        <a href="#graph">icb-graph</a>
+        <a href="#server">icb-server</a>
+        <a href="#parser-ts">icb-parser (tree-sitter)</a>
+    </nav>
+</header>
+<div class="container">
+    <div id="content" class="loader">Loading benchmark data…</div>
+</div>
+
+<script>
+    const TABS = {
+        clang: 'icb-clang',
+        graph: 'icb-graph',
+        server: 'icb-server',
+        'parser-ts': 'icb-parser (tree-sitter)'
+    };
+
+    function createTable(benchmarks) {
+        if (!benchmarks || benchmarks.length === 0) return '<p>No data available.</p>';
+        let html = '<table><thead><tr><th>Benchmark</th><th>Time</th></tr></thead><tbody>';
+        benchmarks.forEach(b => {
+            const time = typeof b.time_ns === 'number'
+                ? (b.time_ns / 1e6).toFixed(2) + ' ms'
+                : (typeof b.time_ms === 'number' ? b.time_ms.toFixed(2) + ' ms' : b.time || 'n/a');
+            html += `<tr><td>${b.name}</td><td class="metric">${time}</td></tr>`;
+        });
+        html += '</tbody></table>';
+        return html;
+    }
+
+    function renderTab(tabId) {
+        const data = window.__benchData;
+        if (!data || !data[tabId]) {
+            document.getElementById('content').innerHTML = '<div class="loader">No data for this tab.</div>';
+            return;
+        }
+        const benchmarks = data[tabId];
+        document.getElementById('content').innerHTML = createTable(benchmarks);
+    }
+
+    function switchTab(tabId) {
+        document.querySelectorAll('#tabNav a').forEach(a => a.classList.remove('active'));
+        document.querySelector(`#tabNav a[href="#${tabId}"]`).classList.add('active');
+        renderTab(tabId);
+    }
+
+    async function loadData() {
+        try {
+            const resp = await fetch('bench-data/latest.json');
+            if (!resp.ok) throw new Error('Network error');
+            const json = await resp.json();
+            window.__benchData = json;
+            // default tab
+            const hash = window.location.hash.slice(1) || 'clang';
+            if (!json[hash]) {
+                // fallback to first available
+                const first = Object.keys(json)[0] || 'clang';
+                window.location.hash = first;
+                switchTab(first);
+            } else {
+                switchTab(hash);
+            }
+        } catch (e) {
+            document.getElementById('content').innerHTML = `<div class="error">Failed to load benchmark data: ${e.message}</div>`;
+        }
+    }
+
+    window.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('#tabNav a').forEach(a => {
+            a.addEventListener('click', e => {
+                e.preventDefault();
+                const tab = a.getAttribute('href').slice(1);
+                window.location.hash = tab;
+                switchTab(tab);
+            });
+        });
+        loadData();
+    });
+</script>
+</body>
+</html>

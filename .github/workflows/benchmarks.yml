@@ -9,6 +9,7 @@ on:
       - 'crates/icb-graph/**'
       - 'crates/icb-parser/**'
       - 'benches/**'
+      - 'scripts/generate-bench-json/**'
       - '.github/workflows/benchmarks.yml'
   pull_request:
     branches: [main]
@@ -17,6 +18,7 @@ on:
       - 'crates/icb-graph/**'
       - 'crates/icb-parser/**'
       - 'benches/**'
+      - 'scripts/generate-bench-json/**'
       - '.github/workflows/benchmarks.yml'
 
 jobs:
@@ -31,7 +33,6 @@ jobs:
         run: |
           sudo apt-get update -y
           sudo apt-get install -y llvm-dev libclang-dev libclang-cpp-dev clang
-          # Help clang-sys locate the library if pkg-config fails
           echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
       - name: Run Clang benchmarks
         run: |
@@ -107,3 +108,38 @@ jobs:
         with:
           name: bench-ts
           path: bench_ts.txt
+
+  publish-results:
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    needs: [bench-clang, bench-graph, bench-server, bench-parser-ts]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - name: Generate latest.json
+        run: |
+          mkdir -p docs/bench-data
+          cargo run -p generate-bench-json -- \
+            artifacts/bench-clang/bench_clang.txt \
+            artifacts/bench-graph/bench_graph.txt \
+            artifacts/bench-server/bench_server.txt \
+            artifacts/bench-ts/bench_ts.txt \
+            > docs/bench-data/latest.json
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add docs/bench-data/latest.json
+          if git diff-index --quiet HEAD --; then
+            echo "No changes";
+          else
+            git commit -m "bench: update latest.json"
+            git push
+          fi
