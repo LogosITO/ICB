@@ -4,6 +4,13 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
+    paths:
+      - 'crates/icb-clang/**'
+      - 'crates/icb-graph/**'
+      - 'crates/icb-parser/**'
+      - 'benches/**'
+      - 'scripts/generate-bench-json/**'
+      - '.github/workflows/benchmarks.yml'
   pull_request:
     branches: [main]
     paths:
@@ -99,7 +106,8 @@ jobs:
           path: bench_ts.txt
 
   publish-results:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    # Не публикуем результаты для PR, только при push и ручном запуске
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     needs: [bench-clang, bench-graph, bench-server, bench-parser-ts]
     runs-on: ubuntu-latest
     steps:
