@@ -31,13 +31,19 @@ jobs:
         with:
           toolchain: stable
 
+      - name: Install LLVM and Clang libraries
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y llvm-dev libclang-dev libclang-cpp-dev clang
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
+
       - name: Build documentation (cargo doc)
         run: cargo doc --workspace --no-deps --document-private-items
 
       - name: Prepare deployment directory
         run: |
           mv target/doc public
-          
+
           cp docs/index.html public/
           cp docs/benchmarks.html public/
 

@@ -1,11 +1,10 @@
-# deny.toml
 [graph]
 all-features = false
 
 [advisories]
-vulnerability = "all"
-unmaintained = "transitive"
-yanked = "all"
+vulnerability = "deny"
+unmaintained = "warn"
+yanked = "deny"
 notice = "warn"
 
 [licenses]
