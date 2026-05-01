@@ -7,12 +7,13 @@ interface Props {
 }
 
 export default function FunctionsTable({ onSelect }: Props) {
-    const { data, isLoading } = useFunctions()
+    const { data, isLoading, error } = useFunctions()
     const [filter, setFilter] = useState('')
     const [sortKey, setSortKey] = useState<keyof FunctionMetric>('name')
     const [sortAsc, setSortAsc] = useState(true)
 
-    if (isLoading) return <div style={{ color: 'var(--text-dim)' }}>Loading…</div>
+    if (error) return <div style={{ color: 'var(--text-dim)', padding: '40px' }}>⚠️ Error loading functions</div>
+    if (isLoading) return <div style={{ color: 'var(--text-dim)', padding: '40px' }}>Loading functions…</div>
 
     const filtered = (data ?? []).filter(f => f.name.toLowerCase().includes(filter.toLowerCase()))
     const sorted = [...filtered].sort((a, b) => {
@@ -31,13 +32,13 @@ export default function FunctionsTable({ onSelect }: Props) {
     }
 
     return (
-        <div>
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+        <div className="fade-in">
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
                 <input
-                    placeholder="Filter functions…"
+                    placeholder="Search functions…"
                     value={filter}
                     onChange={e => setFilter(e.target.value)}
-                    style={{ width: '240px' }}
+                    style={{ width: '260px' }}
                 />
             </div>
             <table>
@@ -56,8 +57,8 @@ export default function FunctionsTable({ onSelect }: Props) {
                 {sorted.map(f => (
                     <tr key={f.name} onClick={() => onSelect(f.name)} style={{ cursor: 'pointer' }}>
                         <td style={{ color: 'var(--accent)', fontWeight: 500 }}>{f.name}</td>
-                        <td style={{ color: 'var(--text-dim)' }}>{f.kind}</td>
-                        <td style={{ color: 'var(--text-dim)' }}>{f.line}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{f.kind}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{f.line}</td>
                         <td>{f.complexity}</td>
                         <td>{f.callers}</td>
                         <td>{f.callees}</td>

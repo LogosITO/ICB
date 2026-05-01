@@ -15,16 +15,16 @@ export default function DiffViewer() {
     }
 
     return (
-        <div>
-            <h2 style={{ fontSize: '20px', fontWeight: 600, marginBottom: '24px', color: 'var(--accent)' }}>Diff</h2>
+        <div className="fade-in">
+            <h2 style={{ fontSize: '22px', fontWeight: 600, marginBottom: '24px', color: 'var(--accent)' }}>Diff</h2>
             <div style={{ display: 'flex', gap: '32px', marginBottom: '24px' }}>
-                <label style={{ color: 'var(--text-dim)', fontSize: '13px' }}>
+                <label style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                     Old graph (JSON)
-                    <input type="file" accept=".json" onChange={handleFile(setOldData)} style={{ marginTop: '4px', display: 'block' }} />
+                    <input type="file" accept=".json" onChange={handleFile(setOldData)} style={{ marginTop: '6px', display: 'block' }} />
                 </label>
-                <label style={{ color: 'var(--text-dim)', fontSize: '13px' }}>
+                <label style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
                     New graph (JSON)
-                    <input type="file" accept=".json" onChange={handleFile(setNewData)} style={{ marginTop: '4px', display: 'block' }} />
+                    <input type="file" accept=".json" onChange={handleFile(setNewData)} style={{ marginTop: '6px', display: 'block' }} />
                 </label>
             </div>
             {oldData && newData && (

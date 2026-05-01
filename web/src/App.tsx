@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, ReactNode } from 'react'
 import Layout from './components/Layout'
 import Overview from './components/Overview'
 import FunctionsTable from './components/FunctionsTable'
@@ -17,20 +17,28 @@ function App() {
         if (tab !== 'graph') setFocusNode(null)
     }
 
+    const handleSelectNode = (name: string) => {
+        setFocusNode(name)
+        setActiveTab('graph')
+    }
+
     return (
         <Layout activeTab={activeTab} onTabChange={handleTabChange}>
-            {activeTab === 'overview' && <Overview />}
-            {activeTab === 'functions' && <FunctionsTable onSelect={(name) => { setFocusNode(name); setActiveTab('graph'); }} />}
-            {activeTab === 'classes' && <ClassesTable onSelect={(name) => { setFocusNode(name); setActiveTab('graph'); }} />}
-            {activeTab === 'graph' && (
-                <GraphViewer
-                    focus={focusNode}
-                    onSelectNode={(name) => setFocusNode(name)}
-                />
-            )}
-            {activeTab === 'diff' && <DiffViewer />}
+            <FadeIn key={activeTab}>
+                {activeTab === 'overview' && <Overview />}
+                {activeTab === 'functions' && <FunctionsTable onSelect={handleSelectNode} />}
+                {activeTab === 'classes' && <ClassesTable onSelect={handleSelectNode} />}
+                {activeTab === 'graph' && (
+                    <GraphViewer focus={focusNode} onSelectNode={setFocusNode} />
+                )}
+                {activeTab === 'diff' && <DiffViewer />}
+            </FadeIn>
         </Layout>
     )
+}
+
+function FadeIn({ children }: { children: ReactNode }) {
+    return <div className="fade-in">{children}</div>
 }
 
 export default App

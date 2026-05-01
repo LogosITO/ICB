@@ -5,12 +5,13 @@ interface Props {
 }
 
 export default function ClassesTable({ onSelect }: Props) {
-    const { data, isLoading } = useClasses()
+    const { data, isLoading, error } = useClasses()
 
-    if (isLoading) return <div style={{ color: 'var(--text-dim)' }}>Loading…</div>
+    if (error) return <div style={{ color: 'var(--text-dim)', padding: '40px' }}>⚠️ Error loading classes</div>
+    if (isLoading) return <div style={{ color: 'var(--text-dim)', padding: '40px' }}>Loading classes…</div>
 
     return (
-        <div>
+        <div className="fade-in">
             <table>
                 <thead>
                 <tr>
@@ -24,7 +25,7 @@ export default function ClassesTable({ onSelect }: Props) {
                 {(data ?? []).map(c => (
                     <tr key={c.name} onClick={() => onSelect(c.name)} style={{ cursor: 'pointer' }}>
                         <td style={{ color: 'var(--accent)', fontWeight: 500 }}>{c.name}</td>
-                        <td style={{ color: 'var(--text-dim)' }}>{c.line}</td>
+                        <td style={{ color: 'var(--text-secondary)' }}>{c.line}</td>
                         <td>{c.methods}</td>
                         <td>{c.complexity}</td>
                     </tr>

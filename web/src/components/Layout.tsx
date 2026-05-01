@@ -20,28 +20,29 @@ const styles = {
     nav: {
         display: 'flex',
         flexDirection: 'column' as const,
-        width: '180px',
+        width: '200px',
         background: 'var(--surface)',
         borderRight: '1px solid var(--border)',
-        padding: '20px 0',
-        gap: '2px',
+        padding: '24px 0',
+        gap: '4px',
     },
-    navItem: (active: boolean) => ({
+    item: (active: boolean) => ({
         display: 'block',
         width: '100%',
-        padding: '10px 20px',
-        background: active ? 'var(--accent-soft)' : 'transparent',
-        color: active ? 'var(--accent)' : 'var(--text-dim)',
-        border: 'none',
+        padding: '12px 24px',
+        background: active ? 'var(--surface-hover)' : 'transparent',
+        color: active ? 'var(--accent)' : 'var(--text-secondary)',
         textAlign: 'left' as const,
         fontSize: '13px',
-        fontWeight: active ? 500 : 400,
-        transition: 'background 0.15s',
+        fontWeight: 500 as const,
+        borderLeft: active ? '2px solid var(--accent)' : '2px solid transparent',
+        transition: 'background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast)',
     }),
     main: {
         flex: 1,
         overflow: 'auto',
-        padding: '24px 32px',
+        padding: '32px 40px',
+        background: 'var(--bg)',
     },
 }
 
@@ -49,19 +50,20 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
     return (
         <div style={{ display: 'flex', height: '100%' }}>
             <nav style={styles.nav}>
+                <div style={{ padding: '0 24px 24px', fontSize: '18px', fontWeight: 600, color: 'var(--accent)', letterSpacing: '-0.02em' }}>
+                    ICB
+                </div>
                 {tabs.map(tab => (
                     <button
                         key={tab.id}
-                        style={styles.navItem(activeTab === tab.id)}
+                        style={styles.item(activeTab === tab.id)}
                         onClick={() => onTabChange(tab.id)}
                     >
                         {tab.label}
                     </button>
                 ))}
             </nav>
-            <main style={styles.main}>
-                {children}
-            </main>
+            <main style={styles.main}>{children}</main>
         </div>
     )
 }

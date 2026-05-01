@@ -1,16 +1,13 @@
-// web/src/components/GraphViewer.tsx
 import { useEffect, useRef, useState, useCallback } from 'react'
 import Sigma from 'sigma'
 import Graph from 'graphology'
 import forceAtlas2 from 'graphology-layout-forceatlas2'
 import { useGraph } from '../hooks/useGraph'
 
-/* ── Grayscale palette ───────────────────────────────── */
 const NODE_COLOR = '#b0b0b0'
 const NODE_CYCLE = '#505050'
 const NODE_DEAD = '#808080'
 const EDGE_COLOR = 'rgba(180,180,180,0.18)'
-const FONT = 'Inter, sans-serif'
 
 interface NodeAttributes {
     label: string
@@ -32,24 +29,6 @@ interface EdgeAttributes {
 interface Props {
     focus?: string | null
     onSelectNode: (name: string) => void
-}
-
-/** Render a minimal card when zoomed in or when node count is small */
-function cardNodeReducer(settings: any, data: any) {
-    const { size, color, label, line } = data
-    const ctx = settings.context
-    const fontSize = Math.max(10, size * 1.4)
-    ctx.font = `${fontSize}px ${FONT}`
-    ctx.fillStyle = color
-    ctx.beginPath()
-    ctx.roundRect(data.x - size * 3.5, data.y - size * 1.8, size * 7, size * 3.6, 6)
-    ctx.fill()
-    ctx.fillStyle = '#ffffff'
-    ctx.font = `600 ${fontSize}px ${FONT}`
-    ctx.fillText(label, data.x - size * 3.2, data.y - size * 0.2)
-    ctx.font = `${fontSize * 0.7}px ${FONT}`
-    ctx.fillStyle = '#cccccc'
-    ctx.fillText(`line ${line}`, data.x - size * 3.2, data.y + size * 1.2)
 }
 
 export default function GraphViewer({ focus, onSelectNode }: Props) {
@@ -135,14 +114,9 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
             minCameraRatio: 0.05,
             maxCameraRatio: 20,
             defaultEdgeColor: EDGE_COLOR,
-            labelFont: FONT,
             labelColor: { color: '#cccccc' },
+            allowInvalidContainer: true,
         })
-
-        const useCards = data.nodes.length <= 200
-        if (useCards) {
-            sigma.setSetting('nodeReducer', (node, data) => cardNodeReducer(sigma, data))
-        }
 
         sigma.on('clickNode', ({ node }) => {
             const attrs = g.getNodeAttributes(node)
@@ -153,7 +127,13 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
 
         sigmaRef.current = sigma
 
+        const resizeObserver = new ResizeObserver(() => {
+            sigma.refresh()
+        })
+        resizeObserver.observe(containerRef.current)
+
         return () => {
+            resizeObserver.disconnect()
             sigma.kill()
         }
     }, [data, getNodeColor, onSelectNode, showCycles, showDead])
@@ -171,26 +151,23 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
                     background: '#1a1a1a',
                 }}
             >
-                {[
-                    { label: 'Depth', value: depth, onChange: setDepth, options: ['1','2','3'] },
-                    { label: 'Max Nodes', value: maxNodes, onChange: setMaxNodes, type: 'number' },
-                ].map(ctrl => (
-                    <label key={ctrl.label} style={labelStyle}>
-                        {ctrl.label}
-                        {ctrl.options ? (
-                            <select value={ctrl.value} onChange={e => (ctrl.onChange as any)(e.target.value)}>
-                                {ctrl.options.map(o => <option key={o}>{o}</option>)}
-                            </select>
-                        ) : (
-                            <input
-                                type="number"
-                                value={ctrl.value}
-                                onChange={e => ctrl.onChange(e.target.value)}
-                                style={{ width: '70px' }}
-                            />
-                        )}
-                    </label>
-                ))}
+                <label style={labelStyle}>
+                    Depth
+                    <select value={depth} onChange={e => setDepth(e.target.value)}>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                    </select>
+                </label>
+                <label style={labelStyle}>
+                    Max Nodes
+                    <input
+                        type="number"
+                        value={maxNodes}
+                        onChange={e => setMaxNodes(e.target.value)}
+                        style={{ width: '70px' }}
+                    />
+                </label>
                 <label style={checkboxStyle}>
                     <input type="checkbox" checked={showCycles} onChange={e => setShowCycles(e.target.checked)} />
                     cycles
@@ -201,7 +178,10 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
                 </label>
                 {isLoading && <span style={{ color: '#888', fontSize: '13px' }}>loading…</span>}
             </div>
-            <div ref={containerRef} style={{ flex: 1, width: '100%', background: '#111' }} />
+            <div
+                ref={containerRef}
+                style={{ flex: 1, width: '100%', background: '#111', minHeight: '400px' }}
+            />
         </div>
     )
 }
@@ -211,11 +191,11 @@ const labelStyle: React.CSSProperties = {
     fontSize: '13px',
     display: 'flex',
     alignItems: 'center',
-    gap: '4px'
+    gap: '4px',
 }
 
 const checkboxStyle: React.CSSProperties = {
     ...labelStyle,
     userSelect: 'none',
-    cursor: 'pointer'
+    cursor: 'pointer',
 }

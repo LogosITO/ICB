@@ -1,5 +1,3 @@
-//! Project-wide metrics extraction from the Code Property Graph.
-
 use icb_common::NodeKind;
 use icb_graph::analysis;
 use icb_graph::graph::{CodePropertyGraph, Edge};
@@ -29,7 +27,22 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
         .node_weights()
         .filter(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Class)
         .map(|node| {
-            let name = node.name.clone().unwrap_or_default();
+            let raw_name = node.name.clone().unwrap_or_default();
+
+            // Clean USR-like names: take the last segment after '@' and remove '#...' suffix
+            let name = if raw_name.contains('@') && raw_name.contains('#') {
+                raw_name
+                    .split('@')
+                    .next_back()
+                    .unwrap_or(&raw_name)
+                    .split('#')
+                    .next()
+                    .unwrap_or(&raw_name)
+                    .to_string()
+            } else {
+                raw_name
+            };
+
             let is_cycle = cycles.iter().any(|c| c.functions.contains(&name));
             let is_dead = dead.iter().any(|n| n.name.as_deref() == Some(&name));
             let complexity = complex_list
@@ -202,7 +215,6 @@ mod tests {
     fn test_function_metrics() {
         let cpg = build_test_cpg();
         let metrics = collect_function_metrics(&cpg);
-        // Functions: main, helper, method + Class: MyClass → total 4
         assert_eq!(metrics.len(), 4);
         let main_metric = metrics.iter().find(|m| m.name == "main").unwrap();
         assert_eq!(main_metric.callees, 1);
@@ -225,7 +237,6 @@ mod tests {
     fn test_file_metrics() {
         let cpg = build_test_cpg();
         let metrics = collect_file_metrics(&cpg);
-        // main.cpp, helper.cpp, myclass.cpp → 3 files
         assert_eq!(metrics.len(), 3);
         let main_file = metrics.iter().find(|f| f.path == "main.cpp").unwrap();
         assert_eq!(main_file.functions, 1);
