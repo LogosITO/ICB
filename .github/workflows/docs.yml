@@ -2,10 +2,6 @@ name: Docs
 on:
   push:
     branches: [main]
-    paths:
-      - 'crates/**'
-      - 'Cargo.toml'
-      - 'docs/**'
   workflow_dispatch:
 
 permissions:
