@@ -1,16 +1,28 @@
-use crate::facts::RawNode;
-use crate::lang::python::parse_python;
-use icb_common::{IcbError, Language};
-use rayon::prelude::*;
-use std::fs;
+//! Universal parser manager for ICB.
+//!
+//! Provides a single entry point for parsing source code in multiple
+//! languages.  The manager routes requests to the appropriate backend:
+//!
+//! * [`Language::Python`] → [`crate::lang::python::parse_python`],
+//! * [`Language::CppTreeSitter`] → [`crate::cpp_tree_sitter::parse_cpp_file`],
+//! * [`Language::Cpp`] – Clang (handled externally via `icb-clang`; the
+//!   manager returns an error if called directly, prompting the caller to
+//!   use the Clang path).
+//!
+//! # Directory parsing
+//!
+//! When given a directory, the manager recursively discovers files with
+//! language‑specific extensions and parses each one, returning a vector
+//! of `(relative_path, Vec<RawNode>)`.
+
 use std::path::Path;
 
-/// Central entry point for parsing source code.
-///
-/// Supports single files and whole directories (parallel parsing).
-/// Currently Python is supported out of the box.
-/// For C/C++ support use the `icb-clang` crate directly
-/// or via the CLI subcommand.
+use icb_common::{IcbError, Language};
+use walkdir::WalkDir;
+
+use crate::facts::RawNode;
+
+/// Parser manager with no internal state.
 #[derive(Default)]
 pub struct ParserManager;
 
@@ -19,75 +31,82 @@ impl ParserManager {
         Self
     }
 
-    /// Parse a single source file into a flat list of facts.
+    /// Parse a single source file.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IcbError::Parse`] if the language is not supported or the
+    /// source cannot be parsed.
     pub fn parse_file(&self, lang: Language, source: &str) -> Result<Vec<RawNode>, IcbError> {
         match lang {
-            Language::Python => parse_python(source),
-            _ => Err(IcbError::Parse(format!("unsupported language {:?}", lang))),
+            Language::Python => crate::lang::python::parse_python(source),
+            Language::CppTreeSitter => crate::cpp_tree_sitter::parse_cpp_file(source),
+            Language::Cpp => Err(IcbError::UnsupportedLanguage(
+                "Cpp backend requires the `icb-clang` crate – use `CppTreeSitter` instead or call \
+                 Clang directly"
+                    .into(),
+            )),
+            other => Err(IcbError::UnsupportedLanguage(format!("{:?}", other))),
         }
     }
 
-    /// Parse all source files inside a directory (recursively).
+    /// Recursively discover and parse files under `root` for the given
+    /// language.
     ///
-    /// Returns a vector of `(relative_path, Vec<RawNode>)` for each
-    /// successfully parsed file. Files that fail to parse are skipped with
-    /// a warning.
+    /// The language determines both the file extensions and the parser.
     ///
-    /// # Supported extensions
-    /// - Python: `.py`
-    /// - C/C++: `.cpp`, `.cxx`, `.c`, `.h`, `.hpp` (via Clang, if `icb-clang` is used separately)
+    /// # Errors
+    ///
+    /// Returns [`IcbError::Io`] if directory traversal fails, or
+    /// [`IcbError::Parse`] for the first file that fails to parse.
     pub fn parse_directory(
         &self,
         lang: Language,
         root: &Path,
     ) -> Result<Vec<(String, Vec<RawNode>)>, IcbError> {
+        let extensions = extensions_for_language(lang);
         let mut files = Vec::new();
-        collect_files(root, &mut files, lang)?;
-
-        let results: Vec<_> = files
-            .into_par_iter()
-            .filter_map(|path| {
-                let content = fs::read_to_string(&path).ok()?;
-                match self.parse_file(lang, &content) {
-                    Ok(facts) => {
-                        let relative = path.strip_prefix(root).unwrap_or(&path);
-                        Some((relative.display().to_string(), facts))
-                    }
-                    Err(e) => {
-                        log::warn!("Skipping {}: {}", path.display(), e);
-                        None
+        for entry in WalkDir::new(root).follow_links(false) {
+            let entry = entry.map_err(|e| IcbError::Parse(e.to_string()))?;
+            if entry.file_type().is_file() {
+                if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
+                    if extensions.contains(&ext.to_lowercase().as_str()) {
+                        files.push(entry.path().to_path_buf());
                     }
                 }
-            })
-            .collect();
+            }
+        }
+
+        let relative_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        let mut results = Vec::new();
+        for file_path in files {
+            let source = std::fs::read_to_string(&file_path).map_err(IcbError::Io)?;
+            let facts = match lang {
+                Language::Cpp => {
+                    return Err(IcbError::UnsupportedLanguage(
+                        "Cpp backend requires Clang".into(),
+                    ));
+                }
+                _ => self.parse_file(lang, &source)?,
+            };
+            let rel = file_path
+                .strip_prefix(&relative_root)
+                .unwrap_or(&file_path)
+                .display()
+                .to_string();
+            results.push((rel, facts));
+        }
         Ok(results)
     }
 }
 
-/// Recursively collect source files with the appropriate extension for the language.
-fn collect_files(
-    dir: &Path,
-    files: &mut Vec<std::path::PathBuf>,
-    lang: Language,
-) -> Result<(), IcbError> {
-    let extensions: &[&str] = match lang {
+fn extensions_for_language(lang: Language) -> &'static [&'static str] {
+    match lang {
         Language::Python => &["py"],
+        Language::Cpp | Language::CppTreeSitter => &["c", "cpp", "cc", "cxx", "h", "hpp"],
         Language::Rust => &["rs"],
-        Language::JavaScript => &["js"],
-        Language::Cpp => &["cpp", "cxx", "c", "h", "hpp"],
-    };
-    for entry in fs::read_dir(dir).map_err(IcbError::Io)? {
-        let entry = entry.map_err(IcbError::Io)?;
-        let path = entry.path();
-        if path.is_dir() {
-            collect_files(&path, files, lang)?;
-        } else if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-            if extensions.contains(&ext) {
-                files.push(path);
-            }
-        }
+        Language::JavaScript => &["js", "jsx", "ts", "tsx"],
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -100,8 +119,8 @@ mod tests {
         let res = manager.parse_file(Language::Rust, "fn main() {}");
         assert!(res.is_err());
         match res.unwrap_err() {
-            IcbError::Parse(msg) => assert!(msg.contains("unsupported")),
-            _ => panic!("Expected Parse error"),
+            IcbError::UnsupportedLanguage(_) => {}
+            other => panic!("Expected UnsupportedLanguage, got {:?}", other),
         }
     }
 }

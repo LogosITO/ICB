@@ -65,7 +65,7 @@ impl GraphBuilder {
                 existing
             } else {
                 let idx = self.cpg.graph.add_node(Node {
-                    kind: raw.kind.clone(),
+                    kind: raw.kind,
                     name: raw.name.clone(),
                     usr: Some(usr.clone()),
                     start_line: raw.start_line,

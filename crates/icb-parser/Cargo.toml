@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 icb-common = { path = "../icb-common" }
-tree-sitter = { workspace = true }
-tree-sitter-python = { workspace = true }
+tree-sitter = "0.22"
+tree-sitter-python = "0.21"
+tree-sitter-cpp = "0.22"
 anyhow = { workspace = true }
-rayon = { workspace = true }
-parking_lot = { workspace = true }
 log = { workspace = true }
+serde = { workspace = true }
+serde_json = "1"
+walkdir = "2.5.0"

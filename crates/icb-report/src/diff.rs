@@ -137,7 +137,7 @@ pub fn generate_diff(
         };
         let extra = json!({ "status": status, "color": color });
         graph.nodes.push(icb_graph::graph::Node {
-            kind: node.kind.clone(),
+            kind: node.kind,
             name: node.name.clone(),
             usr: Some(extra.to_string()),
             start_line: node.start_line,
@@ -162,7 +162,7 @@ pub fn generate_diff(
             if !node_map.contains_key(name) {
                 let idx = graph.nodes.len();
                 graph.nodes.push(icb_graph::graph::Node {
-                    kind: node.kind.clone(),
+                    kind: node.kind,
                     name: node.name.clone(),
                     usr: Some(json!({ "status": "removed", "color": "#f87171" }).to_string()),
                     start_line: node.start_line,
