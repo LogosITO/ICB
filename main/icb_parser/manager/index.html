@@ -2,9 +2,9 @@
 <p>Provides a single entry point for parsing source code in multiple
 languages.  The manager routes requests to the appropriate backend:</p>
 <ul>
-<li><a href="../../icb_common/enum.Language.html#variant.Python" title="variant icb_common::Language::Python"><code>Language::Python</code></a> → <a href="../lang/python/fn.parse_python.html" title="fn icb_parser::lang::python::parse_python"><code>crate::lang::python::parse_python</code></a>,</li>
-<li><a href="../../icb_common/enum.Language.html#variant.CppTreeSitter" title="variant icb_common::Language::CppTreeSitter"><code>Language::CppTreeSitter</code></a> → <a href="../cpp_tree_sitter/fn.parse_cpp_file.html" title="fn icb_parser::cpp_tree_sitter::parse_cpp_file"><code>crate::cpp_tree_sitter::parse_cpp_file</code></a>,</li>
-<li><a href="../../icb_common/enum.Language.html#variant.Cpp" title="variant icb_common::Language::Cpp"><code>Language::Cpp</code></a> – Clang (handled externally via <code>icb-clang</code>; the
+<li>[<code>Language::Python</code>] → <a href="../lang/python/fn.parse_python.html" title="fn icb_parser::lang::python::parse_python"><code>crate::lang::python::parse_python</code></a>,</li>
+<li>[<code>Language::CppTreeSitter</code>] → <a href="../cpp_tree_sitter/fn.parse_cpp_file.html" title="fn icb_parser::cpp_tree_sitter::parse_cpp_file"><code>crate::cpp_tree_sitter::parse_cpp_file</code></a>,</li>
+<li>[<code>Language::Cpp</code>] – Clang (handled externally via <code>icb-clang</code>; the
 manager returns an error if called directly, prompting the caller to
 use the Clang path).</li>
 </ul>
