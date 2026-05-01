@@ -2,9 +2,9 @@
 all-features = false
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"
+vulnerability = "all"
+unmaintained = "transitive"
+yanked = "all"
 notice = "warn"
 
 [licenses]
