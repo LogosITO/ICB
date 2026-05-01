@@ -67,17 +67,23 @@ fn traverse_node(
 
     let (node_kind, name, is_container) = match kind {
         "function_definition" | "function_declaration" => {
-            let name = child_text_by_field(node, "declarator", source)
-                .or_else(|| child_text_by_field(node, "name", source))
-                .unwrap_or_default();
+            let name = function_name(node, source).unwrap_or_default();
             (NodeKind::Function, Some(name), true)
         }
         "class_specifier" | "struct_specifier" => {
-            let name = child_text_by_field(node, "name", source).unwrap_or_default();
+            let name = node
+                .child_by_field_name("name")
+                .map(|n| {
+                    n.utf8_text(source.as_bytes())
+                        .unwrap_or_default()
+                        .to_string()
+                })
+                .unwrap_or_default();
             (NodeKind::Class, Some(name), true)
         }
         "call_expression" => {
-            let name = child_by_field(node, "function")
+            let name = node
+                .child_by_field_name("function")
                 .map(|n| {
                     n.utf8_text(source.as_bytes())
                         .unwrap_or_default()
@@ -87,7 +93,15 @@ fn traverse_node(
             (NodeKind::CallSite, Some(name), false)
         }
         "declaration" => {
-            let name = child_text_by_field(node, "declarator", source).unwrap_or_default();
+            let name = node
+                .child_by_field_name("declarator")
+                .or_else(|| node.child_by_field_name("name"))
+                .map(|n| {
+                    n.utf8_text(source.as_bytes())
+                        .unwrap_or_default()
+                        .to_string()
+                })
+                .unwrap_or_default();
             if parent_kind_is(node, "parameter_list") {
                 (NodeKind::Parameter, Some(name), false)
             } else {
@@ -136,19 +150,32 @@ fn traverse_node(
     }
 }
 
-/// Return the child node matching the given field name, if any.
-fn child_by_field<'a>(node: Node<'a>, field: &str) -> Option<Node<'a>> {
+/// Extract the function name from a function definition/declaration node.
+fn function_name(node: Node, source: &str) -> Option<String> {
+    // Walk the declarator chain: function_definition → declarator (function_declarator) → declarator (identifier)
+    if let Some(decl) = node.child_by_field_name("declarator") {
+        if decl.kind() == "function_declarator" {
+            if let Some(name_node) = decl.child_by_field_name("declarator") {
+                return Some(name_node.utf8_text(source.as_bytes()).ok()?.to_string());
+            }
+            // If the function_declarator has no named 'declarator' child, fall back to its text.
+            // e.g. operator overloads may have a different structure.
+            return Some(decl.utf8_text(source.as_bytes()).ok()?.to_string());
+        }
+        // For plain function declarations the declarator field may point directly to an identifier.
+        return Some(decl.utf8_text(source.as_bytes()).ok()?.to_string());
+    }
+    // Last resort: take the first identifier child.
     let mut cursor = node.walk();
-    let children: Vec<Node> = node.children(&mut cursor).collect();
-    children
-        .into_iter()
-        .find(|child| node.field_name_for_child(child.id() as u32) == Some(field))
-}
-
-/// Return the text of the child with the given field name.
-fn child_text_by_field(node: Node, field: &str, source: &str) -> Option<String> {
-    child_by_field(node, field)
-        .and_then(|n| n.utf8_text(source.as_bytes()).ok().map(|s| s.to_string()))
+    for child in node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            return child
+                .utf8_text(source.as_bytes())
+                .ok()
+                .map(|s| s.to_string());
+        }
+    }
+    None
 }
 
 /// Check whether the node's immediate parent has the expected kind.
