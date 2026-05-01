@@ -51,10 +51,6 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - name: Install LLVM
-        run: |
-          sudo apt-get update -y
-          sudo apt-get install -y llvm-dev libclang-dev
       - name: Run Graph benchmarks
         run: |
           cargo bench -p icb-graph-benchmarks           \
@@ -74,6 +70,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
+      - name: Install LLVM
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y llvm-dev libclang-dev
       - name: Run Server benchmarks
         run: |
           cargo bench -p icb-server-benchmarks          \

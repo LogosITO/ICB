@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 //! Synthetic source generators shared across parser benchmarks.
 
 pub fn build_large_flat_source(num_functions: usize) -> String {
