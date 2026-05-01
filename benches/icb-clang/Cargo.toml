@@ -1,5 +1,5 @@
 [package]
-name = "icb-clang-bench"
+name = "icb-clang-benchmarks"
 version = "0.0.0"
 edition = "2021"
 publish = false
@@ -14,6 +14,31 @@ icb-clang = { path = "../../crates/icb-clang" }
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [[bench]]
-name = "parse_benchmark"
+name = "single_large_file"
 harness = false
-path = "parse_benchmark.rs"
+path = "single_large_file.rs"
+
+[[bench]]
+name = "deeply_nested"
+harness = false
+path = "deeply_nested.rs"
+
+[[bench]]
+name = "many_calls"
+harness = false
+path = "many_calls.rs"
+
+[[bench]]
+name = "system_headers"
+harness = false
+path = "system_headers.rs"
+
+[[bench]]
+name = "real_project_parallel"
+harness = false
+path = "real_project_parallel.rs"
+
+[[bench]]
+name = "real_project_sequential"
+harness = false
+path = "real_project_sequential.rs"

@@ -22,6 +22,14 @@
 //! Enable it by setting the environment variable `ICB_BENCH_PROJECT` to the
 //! project root.
 
+mod common;
+mod single_large_file;
+mod deeply_nested;
+mod many_calls;
+mod system_headers;
+mod real_project_parallel;
+mod real_project_sequential;
+
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use icb_clang::{parser, project};
 use std::path::Path;
