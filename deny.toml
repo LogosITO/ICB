@@ -3,7 +3,7 @@ unlicensed = "deny"
 allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Unicode-DFS-2016"]
 
 [advisories]
-vulnerabilities = "deny"
+vulnerability = "deny"
 unmaintained = "warn"
 ignore = []
 
