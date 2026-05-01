@@ -99,11 +99,7 @@ jobs:
           toolchain: stable
       - name: Run tree‑sitter benchmarks
         run: |
-          cargo bench -p icb-parser-benchmarks          \
-            --bench single_large_file                   \
-            --bench deeply_nested                       \
-            --bench many_calls                          \
-            -- --output-format bencher | tee bench_ts.txt
+          cargo bench -p icb-parser-benchmarks -- --output-format bencher | tee bench_ts.txt
       - uses: actions/upload-artifact@v4
         with:
           name: bench-ts
