@@ -1,2 +1,2 @@
-window.ALL_CRATES = ["icb_clang","icb_clang_benchmarks","icb_cli","icb_common","icb_graph","icb_graph_benchmarks","icb_parser","icb_report","icb_server","icb_server_benchmarks"];
-//{"start":21,"fragment_lengths":[11,23,10,13,12,23,13,13,13,24]}
+window.ALL_CRATES = ["icb_clang","icb_clang_benchmarks","icb_cli","icb_common","icb_graph","icb_graph_benchmarks","icb_parser","icb_parser_benchmarks","icb_report","icb_server","icb_server_benchmarks"];
+//{"start":21,"fragment_lengths":[11,23,10,13,12,23,13,24,13,13,24]}
