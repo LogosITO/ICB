@@ -13,3 +13,11 @@ clap = { workspace = true }
 anyhow = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
+actix-web = "4.13.0"
+petgraph = "0.8.3"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"

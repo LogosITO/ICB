@@ -17,3 +17,6 @@ anyhow = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 petgraph = { workspace = true }
+
+[dev-dependencies]
+actix-rt = "2"
