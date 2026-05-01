@@ -137,7 +137,7 @@
 <a href=#137 id=137 data-nosnippet>137</a>        };
 <a href=#138 id=138 data-nosnippet>138</a>        <span class="kw">let </span>extra = <span class="macro">json!</span>({ <span class="string">"status"</span>: status, <span class="string">"color"</span>: color });
 <a href=#139 id=139 data-nosnippet>139</a>        graph.nodes.push(icb_graph::graph::Node {
-<a href=#140 id=140 data-nosnippet>140</a>            kind: node.kind.clone(),
+<a href=#140 id=140 data-nosnippet>140</a>            kind: node.kind,
 <a href=#141 id=141 data-nosnippet>141</a>            name: node.name.clone(),
 <a href=#142 id=142 data-nosnippet>142</a>            usr: <span class="prelude-val">Some</span>(extra.to_string()),
 <a href=#143 id=143 data-nosnippet>143</a>            start_line: node.start_line,
@@ -162,7 +162,7 @@
 <a href=#162 id=162 data-nosnippet>162</a>            <span class="kw">if </span>!node_map.contains_key(name) {
 <a href=#163 id=163 data-nosnippet>163</a>                <span class="kw">let </span>idx = graph.nodes.len();
 <a href=#164 id=164 data-nosnippet>164</a>                graph.nodes.push(icb_graph::graph::Node {
-<a href=#165 id=165 data-nosnippet>165</a>                    kind: node.kind.clone(),
+<a href=#165 id=165 data-nosnippet>165</a>                    kind: node.kind,
 <a href=#166 id=166 data-nosnippet>166</a>                    name: node.name.clone(),
 <a href=#167 id=167 data-nosnippet>167</a>                    usr: <span class="prelude-val">Some</span>(<span class="macro">json!</span>({ <span class="string">"status"</span>: <span class="string">"removed"</span>, <span class="string">"color"</span>: <span class="string">"#f87171" </span>}).to_string()),
 <a href=#168 id=168 data-nosnippet>168</a>                    start_line: node.start_line,

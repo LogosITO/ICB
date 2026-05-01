@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"mod":["facts","lang","manager"]};
+window.SIDEBAR_ITEMS = {"mod":["cpp_tree_sitter","facts","lang","manager"]};
