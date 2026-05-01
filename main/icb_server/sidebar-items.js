@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["main"],"mod":["analytics","graph_builder","routes"],"struct":["Cli"]};
+window.SIDEBAR_ITEMS = {"fn":["main"],"mod":["analytics","display_name","graph_builder","routes"],"struct":["Cli"]};
