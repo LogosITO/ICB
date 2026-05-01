@@ -19,4 +19,4 @@
   cargo doc --workspace --no-deps
   # Откройте target/doc/icb_core/index.html (или другой крейт)
 - **Онлайн (GitHub Pages)** – если репозиторий публичный и Pages включены:
- https://logosito.github.io/ICB/main/
+ https://logosito.github.io/ICB/
