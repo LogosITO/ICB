@@ -1,37 +1,34 @@
 import { useState } from 'react'
 import Layout from './components/Layout'
-import {GraphViewer} from './components/GraphViewer'
-import Sidebar from './components/Sidebar'
-import NodeDetailPanel from './components/NodeDetailPanel'
+import Overview from './components/Overview'
+import FunctionsTable from './components/FunctionsTable'
+import ClassesTable from './components/ClassesTable'
+import GraphViewer from './components/GraphViewer'
+import DiffViewer from './components/DiffViewer'
 
-export interface GraphParams {
-    kind?: string;
-    focus?: string;
-    depth: string;
-    max_nodes: string;
-    show_cycles: string;
-    show_dead: string;
-    entries: string;
-}
+type Tab = 'overview' | 'functions' | 'classes' | 'graph' | 'diff'
 
 function App() {
-    const [params, setParams] = useState<GraphParams>({
-        kind: 'Function',
-        focus: undefined,
-        depth: '2',
-        max_nodes: '200',
-        show_cycles: 'false',
-        show_dead: 'false',
-        entries: 'main',
-    })
-    const [selectedNode, setSelectedNode] = useState<string | null>(null)
+    const [activeTab, setActiveTab] = useState<Tab>('overview')
+    const [focusNode, setFocusNode] = useState<string | null>(null)
+
+    const handleTabChange = (tab: Tab) => {
+        setActiveTab(tab)
+        if (tab !== 'graph') setFocusNode(null)
+    }
 
     return (
-        <Layout
-            sidebar={<Sidebar params={params} onApply={setParams} onSelectNode={setSelectedNode} />}
-            detail={selectedNode ? <NodeDetailPanel name={selectedNode} onClose={() => setSelectedNode(null)} /> : null}
-        >
-            <GraphViewer params={params} onSelectNode={setSelectedNode} />
+        <Layout activeTab={activeTab} onTabChange={handleTabChange}>
+            {activeTab === 'overview' && <Overview />}
+            {activeTab === 'functions' && <FunctionsTable onSelect={(name) => { setFocusNode(name); setActiveTab('graph'); }} />}
+            {activeTab === 'classes' && <ClassesTable onSelect={(name) => { setFocusNode(name); setActiveTab('graph'); }} />}
+            {activeTab === 'graph' && (
+                <GraphViewer
+                    focus={focusNode}
+                    onSelectNode={(name) => setFocusNode(name)}
+                />
+            )}
+            {activeTab === 'diff' && <DiffViewer />}
         </Layout>
     )
 }

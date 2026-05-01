@@ -1,27 +1,67 @@
-import React from 'react'
+import type { ReactNode } from 'react'
 
-export default function Layout({
-                                   sidebar,
-                                   children,
-                                   detail,
-                               }: {
-    sidebar: React.ReactNode
-    children: React.ReactNode
-    detail: React.ReactNode
-}) {
+type TabId = 'overview' | 'functions' | 'classes' | 'graph' | 'diff'
+
+const tabs: { id: TabId; label: string }[] = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'functions', label: 'Functions' },
+    { id: 'classes', label: 'Classes' },
+    { id: 'graph', label: 'Graph' },
+    { id: 'diff', label: 'Diff' },
+]
+
+interface Props {
+    activeTab: TabId
+    onTabChange: (tab: TabId) => void
+    children: ReactNode
+}
+
+const styles = {
+    nav: {
+        display: 'flex',
+        flexDirection: 'column' as const,
+        width: '180px',
+        background: 'var(--surface)',
+        borderRight: '1px solid var(--border)',
+        padding: '20px 0',
+        gap: '2px',
+    },
+    navItem: (active: boolean) => ({
+        display: 'block',
+        width: '100%',
+        padding: '10px 20px',
+        background: active ? 'var(--accent-soft)' : 'transparent',
+        color: active ? 'var(--accent)' : 'var(--text-dim)',
+        border: 'none',
+        textAlign: 'left' as const,
+        fontSize: '13px',
+        fontWeight: active ? 500 : 400,
+        transition: 'background 0.15s',
+    }),
+    main: {
+        flex: 1,
+        overflow: 'auto',
+        padding: '24px 32px',
+    },
+}
+
+export default function Layout({ activeTab, onTabChange, children }: Props) {
     return (
-        <div className="h-screen flex">
-            <div className="w-80 bg-gray-900 border-r border-gray-700 flex flex-col p-4 gap-4 overflow-y-auto shadow-xl z-20">
-                {sidebar}
-            </div>
-            <div className="flex-1 relative bg-gray-950">
+        <div style={{ display: 'flex', height: '100%' }}>
+            <nav style={styles.nav}>
+                {tabs.map(tab => (
+                    <button
+                        key={tab.id}
+                        style={styles.navItem(activeTab === tab.id)}
+                        onClick={() => onTabChange(tab.id)}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </nav>
+            <main style={styles.main}>
                 {children}
-            </div>
-            {detail && (
-                <div className="w-96 bg-gray-900 border-l border-gray-700 p-4 overflow-y-auto shadow-xl z-20 transition-all">
-                    {detail}
-                </div>
-            )}
+            </main>
         </div>
     )
 }
