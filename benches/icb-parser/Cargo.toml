@@ -1,0 +1,36 @@
+[package]
+name = "icb-parser-benchmarks"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+icb-parser = { path = "../../crates/icb-parser" }
+icb-common = { path = "../../crates/icb-common" }
+fastrand = "2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "single_large_file"
+harness = false
+path = "single_large_file.rs"
+
+[[bench]]
+name = "deeply_nested"
+harness = false
+path = "deeply_nested.rs"
+
+[[bench]]
+name = "many_calls"
+harness = false
+path = "many_calls.rs"
+
+[[bench]]
+name = "real_project"
+harness = false
+path = "real_project.rs"
