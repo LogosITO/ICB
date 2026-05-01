@@ -5,6 +5,7 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use serde::Serialize;
 use std::collections::HashMap;
 
+/// Metric for a single function (or method) visible in the graph.
 #[derive(Debug, Serialize)]
 pub struct FunctionMetric {
     pub name: String,
@@ -18,6 +19,10 @@ pub struct FunctionMetric {
     pub callees: usize,
 }
 
+/// Collects metrics for every function and class node in the CPG.
+///
+/// Names are used as provided by the graph – upstream clearing ensures they
+/// are already human‑readable, no USR mangling is performed here.
 pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> {
     let cycles = analysis::detect_call_cycles(cpg);
     let dead = analysis::detect_dead_code(cpg, &["main".to_string()]);
@@ -27,21 +32,7 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
         .node_weights()
         .filter(|n| n.kind == NodeKind::Function || n.kind == NodeKind::Class)
         .map(|node| {
-            let raw_name = node.name.clone().unwrap_or_default();
-
-            // Clean USR-like names: take the last segment after '@' and remove '#...' suffix
-            let name = if raw_name.contains('@') && raw_name.contains('#') {
-                raw_name
-                    .split('@')
-                    .next_back()
-                    .unwrap_or(&raw_name)
-                    .split('#')
-                    .next()
-                    .unwrap_or(&raw_name)
-                    .to_string()
-            } else {
-                raw_name
-            };
+            let name = node.name.clone().unwrap_or_default();
 
             let is_cycle = cycles.iter().any(|c| c.functions.contains(&name));
             let is_dead = dead.iter().any(|n| n.name.as_deref() == Some(&name));
@@ -83,6 +74,7 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
         .collect()
 }
 
+/// Metric aggregating a class definition.
 #[derive(Debug, Serialize)]
 pub struct ClassMetric {
     pub name: String,
@@ -92,6 +84,8 @@ pub struct ClassMetric {
     pub complexity: usize,
 }
 
+/// Collects metrics for class nodes, counting methods connected via `AstChild`
+/// edges.
 pub fn collect_class_metrics(cpg: &CodePropertyGraph) -> Vec<ClassMetric> {
     let complex_list = analysis::detect_complex_functions(cpg, 0);
 
@@ -130,6 +124,7 @@ pub fn collect_class_metrics(cpg: &CodePropertyGraph) -> Vec<ClassMetric> {
         .collect()
 }
 
+/// Per‑file summary of code entities and call activity.
 #[derive(Debug, Serialize)]
 pub struct FileMetric {
     pub path: String,
@@ -139,6 +134,9 @@ pub struct FileMetric {
     pub calls: usize,
 }
 
+/// Groups nodes and calls by the file path stored in the `usr` field of each
+/// node.  The `usr` field is repurposed as a file location hint by the C++
+/// frontend.
 pub fn collect_file_metrics(cpg: &CodePropertyGraph) -> Vec<FileMetric> {
     let mut files: HashMap<String, (usize, usize, usize, usize)> = HashMap::new();
     for node in cpg.graph.node_weights() {

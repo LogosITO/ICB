@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 mod analytics;
+mod display_name;
 mod graph_builder;
 mod routes;
 

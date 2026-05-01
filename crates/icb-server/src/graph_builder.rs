@@ -5,7 +5,17 @@ use icb_graph::cache;
 use icb_graph::graph::CodePropertyGraph;
 use std::path::{Path, PathBuf};
 
+use crate::display_name;
+
 /// Builds a new graph or loads it from the specified cache file.
+///
+/// The resulting graph has **readable names** on every node: any Clang USR
+/// identifiers are automatically converted via
+/// [`display_name::readable_name`].
+///
+/// When loading from an existing cache, names are cleaned before returning
+/// the graph; if any names are changed, the cache is updated so that
+/// subsequent loads are instant.
 ///
 /// # Arguments
 ///
@@ -30,10 +40,20 @@ pub fn build_or_load_graph(
     max_depth: Option<usize>,
 ) -> anyhow::Result<CodePropertyGraph> {
     let lang = parse_language(language)?;
+
+    // Try loading from cache first
     if let Some(cache_file) = cache_path {
         if cache_file.exists() {
             log::info!("Loading graph from cache {:?}", cache_file);
-            if let Ok(g) = cache::load_graph(cache_file) {
+            if let Ok(mut g) = cache::load_graph(cache_file) {
+                // Normalise names even for cached graphs
+                cleanup_node_names(&mut g);
+                // Persist the cleaned version so it's ready next time
+                if let Err(e) = cache::save_graph(&g, cache_file) {
+                    log::warn!("Failed to update cache with clean names: {}", e);
+                } else {
+                    log::info!("Cache updated with clean names");
+                }
                 return Ok(g);
             }
         }
@@ -100,13 +120,43 @@ pub fn build_or_load_graph(
     }
     builder.resolve_calls();
 
-    let cpg = builder.cpg;
+    let mut cpg = builder.cpg;
+
+    // Convert USR‑based names to readable display names before the graph is
+    // consumed by analytics or the API.
+    cleanup_node_names(&mut cpg);
+
     if let Some(cache_file) = cache_path {
         if let Err(e) = cache::save_graph(&cpg, cache_file) {
             log::warn!("Failed to save cache: {}", e);
         }
     }
     Ok(cpg)
+}
+
+/// Walks all graph nodes and replaces USR‑encoded names with their
+/// human‑readable equivalents.
+fn cleanup_node_names(cpg: &mut CodePropertyGraph) {
+    for node in cpg.graph.node_weights_mut() {
+        // Очищаем name
+        if let Some(ref name) = node.name {
+            let cleaned = display_name::readable_name(name);
+            if cleaned != *name {
+                node.name = Some(cleaned);
+            }
+        }
+
+        if node.kind == icb_common::NodeKind::Function || node.kind == icb_common::NodeKind::Class {
+            if let Some(ref usr) = node.usr {
+                if usr.starts_with("c:") {
+                    let cleaned = display_name::readable_name(usr);
+                    if cleaned != *usr {
+                        node.usr = Some(cleaned);
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn parse_language(s: &str) -> anyhow::Result<Language> {

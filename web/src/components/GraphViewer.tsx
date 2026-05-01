@@ -74,6 +74,15 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
     useEffect(() => {
         if (!data || !containerRef.current) return
 
+        // Если нет узлов – просто очищаем предыдущий граф
+        if (!data.nodes || data.nodes.length === 0) {
+            if (sigmaRef.current) {
+                sigmaRef.current.kill()
+                sigmaRef.current = null
+            }
+            return
+        }
+
         const g = new Graph<NodeAttributes, EdgeAttributes>()
         graphRef.current = g
 
@@ -107,7 +116,9 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
             },
         })
 
-        if (sigmaRef.current) sigmaRef.current.kill()
+        if (sigmaRef.current) {
+            sigmaRef.current.kill()
+        }
 
         const sigma = new Sigma<NodeAttributes, EdgeAttributes>(g, containerRef.current!, {
             renderLabels: false,
@@ -126,6 +137,11 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
         })
 
         sigmaRef.current = sigma
+
+        // Принудительный рефреш, чтобы подхватил размеры контейнера
+        setTimeout(() => {
+            sigma.refresh()
+        }, 10)
 
         const resizeObserver = new ResizeObserver(() => {
             sigma.refresh()
@@ -178,10 +194,34 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
                 </label>
                 {isLoading && <span style={{ color: '#888', fontSize: '13px' }}>loading…</span>}
             </div>
+
+            {/* Контейнер графа с явной высотой */}
             <div
                 ref={containerRef}
-                style={{ flex: 1, width: '100%', background: '#111', minHeight: '400px' }}
-            />
+                style={{
+                    width: '100%',
+                    height: 'calc(100vh - 80px)', // гарантированная высота
+                    background: '#111',
+                    position: 'relative',
+                }}
+            >
+                {/* Если нет данных и не загружается – показываем сообщение */}
+                {!isLoading && data && (!data.nodes || data.nodes.length === 0) && (
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: '50%',
+                            left: '50%',
+                            transform: 'translate(-50%, -50%)',
+                            color: '#666',
+                            fontSize: '16px',
+                            pointerEvents: 'none',
+                        }}
+                    >
+                        graph is empty
+                    </div>
+                )}
+            </div>
         </div>
     )
 }
