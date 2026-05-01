@@ -4,7 +4,7 @@
 ) -&gt; <a class="struct" href="https://doc.rust-lang.org/1.95.0/alloc/vec/struct.Vec.html" title="struct alloc::vec::Vec">Vec</a>&lt;(&amp;'a <a class="struct" href="../graph/struct.Node.html" title="struct icb_graph::graph::Node">Node</a>, &amp;'a <a class="struct" href="../graph/struct.Node.html" title="struct icb_graph::graph::Node">Node</a>)&gt;</code></pre><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>For a given function name, returns all functions it directly calls.</p>
 <p>Each returned tuple contains the callee node and the call‑site node.
 The function first locates the caller by name, collects all
-[<code>NodeKind::CallSite</code>] nodes inside its AST subtree, and follows
+<a href="../../icb_common/enum.NodeKind.html#variant.CallSite" title="variant icb_common::NodeKind::CallSite"><code>NodeKind::CallSite</code></a> nodes inside its AST subtree, and follows
 outgoing <a href="../graph/enum.Edge.html#variant.Call" title="variant icb_graph::graph::Edge::Call"><code>Edge::Call</code></a> edges.</p>
 <h2 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h2>
 <div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>icb_graph::graph::{CodePropertyGraph, Node, Edge};
