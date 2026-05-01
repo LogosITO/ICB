@@ -27,10 +27,12 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - name: Install LLVM
+      - name: Install LLVM and Clang libraries
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y llvm-dev libclang-dev
+          sudo apt-get install -y llvm-dev libclang-dev libclang-cpp-dev clang
+          # Help clang-sys locate the library if pkg-config fails
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
       - name: Run Clang benchmarks
         run: |
           cargo bench -p icb-clang-benchmarks           \
@@ -70,10 +72,11 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - name: Install LLVM
+      - name: Install LLVM and Clang libraries
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y llvm-dev libclang-dev
+          sudo apt-get install -y llvm-dev libclang-dev libclang-cpp-dev clang
+          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
       - name: Run Server benchmarks
         run: |
           cargo bench -p icb-server-benchmarks          \
