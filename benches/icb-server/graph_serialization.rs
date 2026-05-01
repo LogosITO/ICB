@@ -6,7 +6,6 @@
 //! subgraphs.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use icb_graph::graph::Edge;
 use icb_graph::graph::GraphData;
 
 mod common;
