@@ -4,13 +4,6 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - 'crates/icb-clang/**'
-      - 'crates/icb-graph/**'
-      - 'crates/icb-parser/**'
-      - 'benches/**'
-      - 'scripts/generate-bench-json/**'
-      - '.github/workflows/benchmarks.yml'
   pull_request:
     branches: [main]
     paths:
