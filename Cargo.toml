@@ -8,6 +8,7 @@ members = [
     "crates/icb-cli",
     "crates/icb-server",
     "crates/icb-report",
+    "benches/icb-clang",
 ]
 
 [workspace.dependencies]

@@ -37,9 +37,10 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
     const graphRef = useRef<Graph<NodeAttributes, EdgeAttributes> | null>(null)
 
     const [depth, setDepth] = useState('2')
-    const [maxNodes, setMaxNodes] = useState('200')
+    const [maxNodes, setMaxNodes] = useState('100')
     const [showCycles, setShowCycles] = useState(false)
     const [showDead, setShowDead] = useState(false)
+    const [layoutRunning, setLayoutRunning] = useState(false)
 
     const queryParams: Record<string, string> = focus
         ? {
@@ -74,12 +75,15 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
     useEffect(() => {
         if (!data || !containerRef.current) return
 
-        // Если нет узлов – просто очищаем предыдущий граф
+        // Убиваем старый граф
+        if (sigmaRef.current) {
+            sigmaRef.current.kill()
+            sigmaRef.current = null
+        }
+
+        // Если нет узлов — очищаем
         if (!data.nodes || data.nodes.length === 0) {
-            if (sigmaRef.current) {
-                sigmaRef.current.kill()
-                sigmaRef.current = null
-            }
+            graphRef.current = null
             return
         }
 
@@ -106,52 +110,55 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
             }
         })
 
-        forceAtlas2.assign(g, {
-            iterations: 120,
-            settings: {
-                slowDown: 0.1,
-                gravity: 0.3,
-                scalingRatio: 10,
-                linLogMode: true,
-            },
-        })
+        // Запускаем раскладку в фоне, показываем индикатор
+        setLayoutRunning(true)
+        const runLayout = () => {
+            forceAtlas2.assign(g, {
+                iterations: 100,
+                settings: {
+                    slowDown: 0.1,
+                    gravity: 0.3,
+                    scalingRatio: 10,
+                    linLogMode: true,
+                },
+            })
+            setLayoutRunning(false)
 
-        if (sigmaRef.current) {
-            sigmaRef.current.kill()
-        }
+            // Создаём Sigma после раскладки
+            const sigma = new Sigma<NodeAttributes, EdgeAttributes>(g, containerRef.current!, {
+                renderLabels: false,
+                minCameraRatio: 0.05,
+                maxCameraRatio: 20,
+                defaultEdgeColor: EDGE_COLOR,
+                labelColor: { color: '#cccccc' },
+                allowInvalidContainer: true,
+                // WebGL if possible, but sigma auto-detects
+            })
 
-        const sigma = new Sigma<NodeAttributes, EdgeAttributes>(g, containerRef.current!, {
-            renderLabels: false,
-            minCameraRatio: 0.05,
-            maxCameraRatio: 20,
-            defaultEdgeColor: EDGE_COLOR,
-            labelColor: { color: '#cccccc' },
-            allowInvalidContainer: true,
-        })
+            sigma.on('clickNode', ({ node }) => {
+                const attrs = g.getNodeAttributes(node)
+                if (attrs.label && attrs.label !== '?') {
+                    onSelectNode(attrs.label)
+                }
+            })
 
-        sigma.on('clickNode', ({ node }) => {
-            const attrs = g.getNodeAttributes(node)
-            if (attrs.label && attrs.label !== '?') {
-                onSelectNode(attrs.label)
+            sigmaRef.current = sigma
+
+            // Подгоняем камеру под весь граф
+            sigma.getCamera().animatedReset({ duration: 300 })
+
+            const resizeObserver = new ResizeObserver(() => sigma.refresh())
+            resizeObserver.observe(containerRef.current!)
+
+            return () => {
+                resizeObserver.disconnect()
+                sigma.kill()
             }
-        })
-
-        sigmaRef.current = sigma
-
-        // Принудительный рефреш, чтобы подхватил размеры контейнера
-        setTimeout(() => {
-            sigma.refresh()
-        }, 10)
-
-        const resizeObserver = new ResizeObserver(() => {
-            sigma.refresh()
-        })
-        resizeObserver.observe(containerRef.current)
-
-        return () => {
-            resizeObserver.disconnect()
-            sigma.kill()
         }
+
+        // Небольшой таймаут, чтобы интерфейс не замер
+        const timeout = setTimeout(runLayout, 20)
+        return () => clearTimeout(timeout)
     }, [data, getNodeColor, onSelectNode, showCycles, showDead])
 
     return (
@@ -195,30 +202,42 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
                 {isLoading && <span style={{ color: '#888', fontSize: '13px' }}>loading…</span>}
             </div>
 
-            {/* Контейнер графа с явной высотой */}
             <div
                 ref={containerRef}
                 style={{
+                    flex: 1,
                     width: '100%',
-                    height: 'calc(100vh - 80px)', // гарантированная высота
                     background: '#111',
                     position: 'relative',
                 }}
             >
-                {/* Если нет данных и не загружается – показываем сообщение */}
+                {/* Пустое состояние */}
                 {!isLoading && data && (!data.nodes || data.nodes.length === 0) && (
+                    <div style={overlayCenter}>graph is empty</div>
+                )}
+
+                {/* Layout running */}
+                {layoutRunning && (
+                    <div style={overlayCenter}>
+                        <div style={{ color: '#aaa', fontSize: '14px' }}>computing layout…</div>
+                    </div>
+                )}
+
+                {/* Предупреждение о лимите */}
+                {!isLoading && data && data.nodes && data.nodes.length >= parseInt(maxNodes) && (
                     <div
                         style={{
                             position: 'absolute',
-                            top: '50%',
-                            left: '50%',
-                            transform: 'translate(-50%, -50%)',
-                            color: '#666',
-                            fontSize: '16px',
-                            pointerEvents: 'none',
+                            bottom: 8,
+                            right: 12,
+                            color: '#888',
+                            fontSize: '12px',
+                            background: 'rgba(0,0,0,0.7)',
+                            padding: '2px 8px',
+                            borderRadius: 4,
                         }}
                     >
-                        graph is empty
+                        showing {data.nodes.length} nodes (limit reached)
                     </div>
                 )}
             </div>
@@ -238,4 +257,14 @@ const checkboxStyle: React.CSSProperties = {
     ...labelStyle,
     userSelect: 'none',
     cursor: 'pointer',
+}
+
+const overlayCenter: React.CSSProperties = {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    color: '#666',
+    fontSize: '16px',
+    pointerEvents: 'none',
 }
