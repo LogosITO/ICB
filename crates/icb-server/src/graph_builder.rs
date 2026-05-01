@@ -96,7 +96,7 @@ pub fn build_or_load_graph(
             log::info!("Loading graph from cache {:?}", cache_file);
             if let Ok(mut g) = cache::load_graph(cache_file) {
                 // Normalise names even for cached graphs
-                cleanup_node_names(&mut g);
+                display_name::cleanup_node_names(&mut g);
                 // Persist the cleaned version so it's ready next time
                 if let Err(e) = cache::save_graph(&g, cache_file) {
                     log::warn!("Failed to update cache with clean names: {}", e);
@@ -163,7 +163,6 @@ pub fn build_or_load_graph(
 
     let mut builder = icb_graph::builder::GraphBuilder::new();
     for (_, facts) in file_facts {
-        // Keep only the node kinds that form the call graph.
         let filtered: Vec<_> = facts
             .into_iter()
             .filter(|f| {
@@ -185,7 +184,7 @@ pub fn build_or_load_graph(
 
     // Convert USR‑based names to readable display names before the graph is
     // consumed by analytics or the API.
-    cleanup_node_names(&mut cpg);
+    display_name::cleanup_node_names(&mut cpg);
 
     if let Some(cache_file) = cache_path {
         if let Err(e) = cache::save_graph(&cpg, cache_file) {
@@ -193,34 +192,6 @@ pub fn build_or_load_graph(
         }
     }
     Ok(cpg)
-}
-
-/// Walks all graph nodes and replaces USR‑encoded names with their
-/// human‑readable equivalents.
-fn cleanup_node_names(cpg: &mut CodePropertyGraph) {
-    for node in cpg.graph.node_weights_mut() {
-        // Clean the primary display name
-        if let Some(ref name) = node.name {
-            let cleaned = display_name::readable_name(name);
-            if cleaned != *name {
-                node.name = Some(cleaned);
-            }
-        }
-
-        // For functions and classes, also clean the `usr` field if it
-        // appears to be a raw USR (starts with "c:").  This makes the
-        // field consistent with the display name used in the UI.
-        if node.kind == icb_common::NodeKind::Function || node.kind == icb_common::NodeKind::Class {
-            if let Some(ref usr) = node.usr {
-                if usr.starts_with("c:") {
-                    let cleaned = display_name::readable_name(usr);
-                    if cleaned != *usr {
-                        node.usr = Some(cleaned);
-                    }
-                }
-            }
-        }
-    }
 }
 
 fn parse_language(s: &str) -> anyhow::Result<Language> {

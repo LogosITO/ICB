@@ -20,3 +20,7 @@ petgraph = { workspace = true }
 
 [dev-dependencies]
 actix-rt = "2"
+
+[lib]
+name = "icb_server"
+path = "src/lib.rs"

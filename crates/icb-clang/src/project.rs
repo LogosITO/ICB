@@ -202,28 +202,40 @@ fn extract_args(entry: &CompileCommandEntry) -> Vec<String> {
 /// Walk the directory tree and collect C/C++ source files.
 ///
 /// Symlinks are not followed, and the optional `max_depth` limits recursion.
+/// Walk the directory tree and collect C/C++ source files.
+///
+/// Symlinks are not followed, and the optional `max_depth` limits recursion.
+/// File extensions are matched case‑insensitively.
 fn collect_cpp_files(
     dir: &Path,
     files: &mut Vec<PathBuf>,
     max_depth: Option<usize>,
 ) -> Result<(), IcbError> {
-    let cpp_extensions = ["c", "cpp", "cc", "cxx", "h", "hpp"];
-    let walker = WalkDir::new(dir).follow_links(false).into_iter();
-
-    for entry in walker {
+    let cpp_extensions: &[&str] = &["c", "cpp", "cc", "cxx", "h", "hpp"];
+    for entry in WalkDir::new(dir).follow_links(false) {
         let entry = entry.map_err(|e| IcbError::Parse(e.to_string()))?;
         if let Some(max) = max_depth {
             if entry.depth() > max {
                 continue;
             }
         }
-        if entry.file_type().is_file() {
-            if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
-                if cpp_extensions.contains(&ext) {
-                    files.push(entry.path().to_path_buf());
-                }
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
+            if cpp_extensions.iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+                files.push(entry.path().to_path_buf());
             }
         }
     }
     Ok(())
+}
+
+#[doc(hidden)]
+pub fn collect_cpp_files_for_preview(
+    dir: &Path,
+    files: &mut Vec<PathBuf>,
+    max_depth: Option<usize>,
+) -> Result<(), IcbError> {
+    collect_cpp_files(dir, files, max_depth)
 }

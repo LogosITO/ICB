@@ -412,3 +412,22 @@ mod tests {
         assert!(resp.status().is_success());
     }
 }
+
+#[doc(hidden)]
+pub fn __bench_focal_graph(
+    cpg: &CodePropertyGraph,
+    func_name: &str,
+    max_nodes: usize,
+    depth: usize,
+) -> GraphData {
+    focal_graph(cpg, func_name, max_nodes, depth)
+}
+
+#[doc(hidden)]
+pub fn __bench_subgraph_by_kind(
+    cpg: &CodePropertyGraph,
+    kind: Option<&str>,
+    max_nodes: usize,
+) -> GraphData {
+    subgraph_by_kind(cpg, kind, max_nodes)
+}

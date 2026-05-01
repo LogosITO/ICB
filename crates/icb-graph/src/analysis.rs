@@ -85,7 +85,6 @@ pub fn detect_call_cycles(cpg: &CodePropertyGraph) -> Vec<CallCycle> {
             });
         } else if scc.len() == 1 {
             let gidx = scc[0];
-            // check self-loop
             if call_graph.contains_edge(gidx, gidx) {
                 cycles.push(CallCycle {
                     functions: vec![call_graph[gidx].clone()],
@@ -98,62 +97,81 @@ pub fn detect_call_cycles(cpg: &CodePropertyGraph) -> Vec<CallCycle> {
     cycles
 }
 
-/// A function complexity report.
+/// A record produced by [`detect_complex_functions`].
 #[derive(Debug, Clone)]
-pub struct ComplexityReport {
+pub struct ComplexityRecord {
     /// Name of the function.
     pub function_name: String,
-    /// Total number of AST nodes contained in the function's body.
+    /// Number of AST nodes inside the function's body (via `AstChild` edges).
     pub ast_node_count: usize,
-    /// Start line of the function.
+    /// Starting line of the function in source.
     pub start_line: usize,
+    /// Whether the count was truncated at the per‑function node limit.
+    pub truncated: bool,
 }
 
-/// Detects functions whose AST subtree contains more than `threshold` nodes.
+/// Computes the AST‑node count for every function (and method) in the graph.
 ///
-/// The function collects all function nodes, traverses the AST subtree of each
-/// (following [`Edge::AstChild`] edges) and counts the number of descendant
-/// nodes. Functions exceeding the threshold are returned.
+/// The traversal follows `AstChild` edges **once** from each function root,
+/// using a visited set to prevent infinite loops caused by structural cycles
+/// (e.g. a class containing a method that references the class). A hard
+/// limit of `MAX_NODES_PER_FUNCTION` (100 000) is enforced per function;
+/// nodes beyond the limit are not visited.
 ///
 /// # Arguments
 ///
-/// * `cpg` - The Code Property Graph.
-/// * `threshold` - Maximum allowed AST nodes before a function is considered complex.
+/// * `cpg` – The Code Property Graph.
+/// * `_threshold` – Unused; retained for API compatibility.
+///
+/// # Returns
+///
+/// A vector of [`ComplexityRecord`] for every `Function` node.
 pub fn detect_complex_functions(
     cpg: &CodePropertyGraph,
-    threshold: usize,
-) -> Vec<ComplexityReport> {
-    let mut results = Vec::new();
-    for node_idx in cpg.graph.node_indices() {
-        let node = &cpg.graph[node_idx];
+    _threshold: usize,
+) -> Vec<ComplexityRecord> {
+    let mut records = Vec::new();
+
+    for idx in cpg.graph.node_indices() {
+        let node = &cpg.graph[idx];
         if node.kind != NodeKind::Function {
             continue;
         }
-        let count = count_subtree_nodes(cpg, node_idx);
-        if count > threshold {
-            results.push(ComplexityReport {
-                function_name: node.name.clone().unwrap_or_else(|| "?".into()),
-                ast_node_count: count,
-                start_line: node.start_line,
-            });
-        }
-    }
-    results
-}
 
-fn count_subtree_nodes(cpg: &CodePropertyGraph, root: petgraph::stable_graph::NodeIndex) -> usize {
-    let mut count = 0;
-    let mut queue = VecDeque::new();
-    queue.push_back(root);
-    while let Some(current) = queue.pop_front() {
-        count += 1;
-        for edge_ref in cpg.graph.edges(current) {
-            if *edge_ref.weight() == Edge::AstChild {
-                queue.push_back(edge_ref.target());
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+        queue.push_back(idx);
+        visited.insert(idx.index());
+
+        let mut count = 0;
+        const MAX_NODES_PER_FUNCTION: usize = 100_000;
+
+        while let Some(current) = queue.pop_front() {
+            count += 1;
+            if count >= MAX_NODES_PER_FUNCTION {
+                break;
+            }
+
+            for edge_ref in cpg.graph.edges(current) {
+                if *edge_ref.weight() == Edge::AstChild {
+                    let child = edge_ref.target();
+                    if visited.insert(child.index()) {
+                        queue.push_back(child);
+                    }
+                }
             }
         }
+
+        let name = node.name.clone().unwrap_or_default();
+        records.push(ComplexityRecord {
+            function_name: name,
+            ast_node_count: count,
+            start_line: node.start_line,
+            truncated: count >= MAX_NODES_PER_FUNCTION,
+        });
     }
-    count
+
+    records
 }
 
 /// Finds functions that are not reachable from any of the specified entry
@@ -169,7 +187,6 @@ fn count_subtree_nodes(cpg: &CodePropertyGraph, root: petgraph::stable_graph::No
 /// A vector of references to unreachable function nodes. If no entry function
 /// is found, all functions are considered unreachable.
 pub fn detect_dead_code<'a>(cpg: &'a CodePropertyGraph, entry_names: &[String]) -> Vec<&'a Node> {
-    // Build a mapping from name to node indices (there could be duplicates)
     let mut name_to_idx: HashMap<String, Vec<petgraph::stable_graph::NodeIndex>> = HashMap::new();
     for idx in cpg.graph.node_indices() {
         let node = &cpg.graph[idx];
@@ -309,22 +326,22 @@ mod tests {
     fn test_dead_code_from_entry() {
         let cpg = build_test_cpg();
         let dead = detect_dead_code(&cpg, &["a".to_string()]);
-        // d, e, f are unreachable from a
         assert!(dead.iter().any(|n| n.name.as_deref() == Some("d")));
         assert!(dead.iter().any(|n| n.name.as_deref() == Some("e")));
         assert!(dead.iter().any(|n| n.name.as_deref() == Some("f")));
-        // a, b, c are reachable
         assert!(!dead.iter().any(|n| n.name.as_deref() == Some("a")));
         assert!(!dead.iter().any(|n| n.name.as_deref() == Some("b")));
         assert!(!dead.iter().any(|n| n.name.as_deref() == Some("c")));
     }
 
     #[test]
-    fn test_complex_functions() {
+    fn test_complex_functions_limit() {
         let cpg = build_test_cpg();
-        let complex = detect_complex_functions(&cpg, 5);
-        assert_eq!(complex.len(), 1);
-        assert_eq!(complex[0].function_name, "f");
-        assert!(complex[0].ast_node_count > 10);
+        let complex = detect_complex_functions(&cpg, 0);
+        // Only "f" has AstChild edges
+        assert!(!complex.is_empty());
+        let f_record = complex.iter().find(|r| r.function_name == "f").unwrap();
+        assert_eq!(f_record.ast_node_count, 11);
+        assert!(!f_record.truncated);
     }
 }
