@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["readable_name"]};
+window.SIDEBAR_ITEMS = {"fn":["cleanup_node_names","readable_name"]};

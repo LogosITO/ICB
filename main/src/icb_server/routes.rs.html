@@ -412,4 +412,23 @@
 <a href=#412 id=412 data-nosnippet>412</a>        <span class="macro">assert!</span>(resp.status().is_success());
 <a href=#413 id=413 data-nosnippet>413</a>    }
 <a href=#414 id=414 data-nosnippet>414</a>}
+<a href=#415 id=415 data-nosnippet>415</a>
+<a href=#416 id=416 data-nosnippet>416</a><span class="attr">#[doc(hidden)]
+<a href=#417 id=417 data-nosnippet>417</a></span><span class="kw">pub fn </span>__bench_focal_graph(
+<a href=#418 id=418 data-nosnippet>418</a>    cpg: <span class="kw-2">&amp;</span>CodePropertyGraph,
+<a href=#419 id=419 data-nosnippet>419</a>    func_name: <span class="kw-2">&amp;</span>str,
+<a href=#420 id=420 data-nosnippet>420</a>    max_nodes: usize,
+<a href=#421 id=421 data-nosnippet>421</a>    depth: usize,
+<a href=#422 id=422 data-nosnippet>422</a>) -&gt; GraphData {
+<a href=#423 id=423 data-nosnippet>423</a>    focal_graph(cpg, func_name, max_nodes, depth)
+<a href=#424 id=424 data-nosnippet>424</a>}
+<a href=#425 id=425 data-nosnippet>425</a>
+<a href=#426 id=426 data-nosnippet>426</a><span class="attr">#[doc(hidden)]
+<a href=#427 id=427 data-nosnippet>427</a></span><span class="kw">pub fn </span>__bench_subgraph_by_kind(
+<a href=#428 id=428 data-nosnippet>428</a>    cpg: <span class="kw-2">&amp;</span>CodePropertyGraph,
+<a href=#429 id=429 data-nosnippet>429</a>    kind: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt;,
+<a href=#430 id=430 data-nosnippet>430</a>    max_nodes: usize,
+<a href=#431 id=431 data-nosnippet>431</a>) -&gt; GraphData {
+<a href=#432 id=432 data-nosnippet>432</a>    subgraph_by_kind(cpg, kind, max_nodes)
+<a href=#433 id=433 data-nosnippet>433</a>}
 </code></pre></div></section></main></body></html>

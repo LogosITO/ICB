@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["detect_call_cycles","detect_complex_functions","detect_dead_code"],"struct":["CallCycle","ComplexityReport"]};
+window.SIDEBAR_ITEMS = {"fn":["detect_call_cycles","detect_complex_functions","detect_dead_code"],"struct":["CallCycle","ComplexityRecord"]};

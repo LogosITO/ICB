@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["build_or_load_graph","cleanup_node_names","parse_language"]};
+window.SIDEBAR_ITEMS = {"fn":["build_or_load_graph"]};

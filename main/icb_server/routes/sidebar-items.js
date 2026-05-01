@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["configure","find_node_index_by_name","focal_graph","get_classes","get_files","get_functions","get_graph","get_node_detail","subgraph_by_kind"],"struct":["GraphQuery","NodeDetail"]};
+window.SIDEBAR_ITEMS = {"fn":["configure"]};
