@@ -1,0 +1,54 @@
+name: Benchmarks
+
+on:
+  workflow_dispatch:
+  schedule:
+    # Every night at 3 AM
+    - cron: '0 3 * * *'
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+
+      # Install LLVM/Clang (needed by icb-clang)
+      - name: Install LLVM
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-dev libclang-dev
+
+      - name: Install critcmp
+        uses: taiki-e/install-action@v2
+        with:
+          tool: critcmp
+
+      - name: Run benchmarks
+        run: cargo bench --workspace -- --output-format bencher | tee bench_output.txt
+
+      - name: Store benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmarks
+          path: bench_output.txt
+
+      # Optional: compare against previous run
+      - name: Download previous benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          name: benchmarks
+          path: prev-bench
+        continue-on-error: true
+
+      - name: Compare with previous
+        if: success() || failure()
+        run: |
+          if [ -f prev-bench/bench_output.txt ]; then
+            critcmp prev-bench/bench_output.txt bench_output.txt
+          else
+            echo "No previous results to compare."
+          fi
