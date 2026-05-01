@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB – Infinite Code Blueprint</title>
+    <style>
+        :root {
+            --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
+            --border: #333; --hover: #222; --header: #888;
+        }
+        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        header { padding: 2rem; border-bottom: 1px solid var(--border); text-align: center; }
+        h1 { font-size: 2rem; color: var(--accent); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; margin: 1rem 0; border-radius: 4px; }
+        .card h2 { margin-top: 0; color: var(--accent); }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .bench-status { font-size: 0.9rem; color: var(--header); }
+    </style>
+</head>
+<body>
+<header>
+    <h1>ICB</h1>
+    <p>Infinite Code Blueprint – multi‑language call graph analysis toolkit</p>
+</header>
+<div class="container">
+    <div class="card">
+        <h2>Documentation</h2>
+        <div class="grid">
+            <a href="./icb_common/index.html">icb‑common</a>
+            <a href="./icb_parser/index.html">icb‑parser</a>
+            <a href="./icb_clang/index.html">icb‑clang</a>
+            <a href="./icb_graph/index.html">icb‑graph</a>
+            <a href="./icb_cli/index.html">icb‑cli</a>
+            <a href="./icb_server/index.html">icb‑server</a>
+            <a href="./icb_report/index.html">icb‑report</a>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Latest Benchmarks <span class="bench-status" id="benchDate"></span></h2>
+        <div id="benchContent">Loading…</div>
+    </div>
+</div>
+
+<script>
+    async function loadBenchmarks() {
+        try {
+            const resp = await fetch('bench-data/latest.json');
+            if (!resp.ok) throw new Error('No data');
+            const json = await resp.json();
+            let html = '';
+            for (const [group, tests] of Object.entries(json)) {
+                html += `<h3>${group}</h3><ul>`;
+                tests.forEach(t => {
+                    const time = (t.time_ns / 1e6).toFixed(2) + ' ms';
+                    html += `<li>${t.name}: <strong>${time}</strong></li>`;
+                });
+                html += '</ul>';
+            }
+            document.getElementById('benchContent').innerHTML = html;
+            document.getElementById('benchDate').textContent = '';
+        } catch (e) {
+            document.getElementById('benchContent').innerHTML = 'Benchmark data not available yet.';
+        }
+    }
+    window.addEventListener('DOMContentLoaded', loadBenchmarks);
+</script>
+</body>
+</html>

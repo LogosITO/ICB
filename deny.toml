@@ -1,11 +1,22 @@
-[licenses]
-unlicensed = "deny"
-allow = ["MIT", "Apache-2.0", "BSD-3-Clause", "ISC", "Unicode-DFS-2016"]
+# deny.toml
+[graph]
+all-features = false
 
 [advisories]
-vulnerability = "deny"
-unmaintained = "warn"
-ignore = []
+vulnerability = "all"
+unmaintained = "transitive"
+yanked = "all"
+notice = "warn"
+
+[licenses]
+unlicensed = "deny"
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016",
+]
 
 [bans]
 multiple-versions = "warn"

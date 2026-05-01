@@ -1,49 +1,58 @@
 name: Docs
-
 on:
   push:
-    branches: [ main ]
-    tags: [ 'v*' ]
+    branches: [main]
+    paths:
+      - 'crates/**'
+      - 'Cargo.toml'
+      - 'docs/**'
+  workflow_dispatch:
 
-env:
-  CARGO_TERM_COLOR: always
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
-      - name: Setup Rust
-        uses: actions-rs/toolchain@v1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
 
-      - name: Install LLVM/Clang
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libclang-dev llvm-dev
-          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
+      - name: Build documentation (cargo doc)
+        run: cargo doc --workspace --no-deps --document-private-items
 
-      - name: Build full documentation
-        run: cargo doc --workspace --no-deps
-        env:
-          LIBCLANG_PATH: ${{ env.LIBCLANG_PATH }}
-
-      - name: Generate root index.html
+      - name: Prepare deployment directory
         run: |
-          echo "<html><body><h1>ICB Documentation</h1><ul>" > target/doc/index.html
-          for dir in target/doc/*/; do
-            name=$(basename "$dir")
-            if [ "$name" != "src" ]; then
-              echo "<li><a href='${name}/index.html'>${name}</a></li>" >> target/doc/index.html
-            fi
-          done
-          echo "</ul></body></html>" >> target/doc/index.html
+          mv target/doc public
+          
+          cp docs/index.html public/
+          cp docs/benchmarks.html public/
+
+          if [ -d docs/bench-data ]; then
+            mkdir -p public/bench-data
+            cp -r docs/bench-data/* public/bench-data/
+          fi
+
+          echo "Deployment directory ready."
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
 
       - name: Deploy to GitHub Pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./target/doc
-          destination_dir: ${{ github.ref_name }}
+        id: deployment
+        uses: actions/deploy-pages@v4
