@@ -1,1 +1,1 @@
-window.SIDEBAR_ITEMS = {"fn":["build_or_load_graph","find_node_index_by_name","focal_graph","get_graph","get_node_detail","main","parse_language","subgraph_by_kind"],"struct":["Cli","GraphQuery","NodeDetail"]};
+window.SIDEBAR_ITEMS = {"fn":["main"],"mod":["analytics","graph_builder","routes"],"struct":["Cli"]};
