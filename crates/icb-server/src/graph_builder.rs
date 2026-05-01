@@ -1,4 +1,53 @@
 //! Graph construction and caching logic for the server.
+//!
+//! # Overview
+//!
+//! This module is responsible for turning raw parser facts into a fully
+//! resolved [`CodePropertyGraph`].  It supports three distinct workflows:
+//!
+//! * **build** – parse a project or a single file and construct the graph
+//!   from scratch.
+//! * **cache** – serialise the graph to a compressed binary format using
+//!   [`icb_graph::cache`] so that subsequent runs can skip parsing
+//!   entirely.
+//! * **load** – restore a previously cached graph, automatically cleaning
+//!   up node names if needed (e.g. when the cache was created before the
+//!   USR‑to‑display‑name conversion was introduced).
+//!
+//! # Fact filtering
+//!
+//! Parsing a C++ project yields a large number of facts – not only
+//! functions and classes but also local variables, parameters, and
+//! intermediate AST scaffolding.  Only a small subset of these facts is
+//! needed for the call graph:
+//!
+//! * [`NodeKind::Function`] – callable entities,
+//! * [`NodeKind::Class`] – type containers,
+//! * [`NodeKind::CallSite`] – edges between callers and callees.
+//!
+//! All other facts (`Variable`, `Parameter`, …) are **discarded** before
+//! the graph is built.  This reduces the number of nodes by a factor of
+//! 10–100× and keeps both construction time and memory footprint
+//! predictable, even for large projects.
+//!
+//! # Name normalisation
+//!
+//! Clang emits Unified Symbol Resolution (USR) strings as unique
+//! identifiers.  The [`display_name`] module converts these strings into
+//! human‑readable names (e.g. `c:@F@main#` → `main`).  Normalisation
+//! happens in two places:
+//!
+//! * right after a new graph is built,
+//! * immediately after a graph is loaded from cache (the updated graph is
+//!   written back to the cache so the conversion is a one‑time cost).
+//!
+//! # Parallelism
+//!
+//! The parser itself processes translation units in parallel (see
+//! [`icb_clang::project`]).  Graph construction is intentionally
+//! single‑threaded – [`GraphBuilder::merge`] fuses per‑file sub‑graphs
+//! sequentially, which avoids lock contention on the central
+//! [`petgraph::StableGraph`].
 
 use icb_common::Language;
 use icb_graph::cache;
@@ -114,8 +163,20 @@ pub fn build_or_load_graph(
 
     let mut builder = icb_graph::builder::GraphBuilder::new();
     for (_, facts) in file_facts {
+        // Keep only the node kinds that form the call graph.
+        let filtered: Vec<_> = facts
+            .into_iter()
+            .filter(|f| {
+                matches!(
+                    f.kind,
+                    icb_common::NodeKind::Function
+                        | icb_common::NodeKind::Class
+                        | icb_common::NodeKind::CallSite
+                )
+            })
+            .collect();
         let mut local = icb_graph::builder::GraphBuilder::new();
-        local.ingest_file_facts(&facts);
+        local.ingest_file_facts(&filtered);
         builder.merge(local);
     }
     builder.resolve_calls();
@@ -138,7 +199,7 @@ pub fn build_or_load_graph(
 /// human‑readable equivalents.
 fn cleanup_node_names(cpg: &mut CodePropertyGraph) {
     for node in cpg.graph.node_weights_mut() {
-        // Очищаем name
+        // Clean the primary display name
         if let Some(ref name) = node.name {
             let cleaned = display_name::readable_name(name);
             if cleaned != *name {
@@ -146,6 +207,9 @@ fn cleanup_node_names(cpg: &mut CodePropertyGraph) {
             }
         }
 
+        // For functions and classes, also clean the `usr` field if it
+        // appears to be a raw USR (starts with "c:").  This makes the
+        // field consistent with the display name used in the UI.
         if node.kind == icb_common::NodeKind::Function || node.kind == icb_common::NodeKind::Class {
             if let Some(ref usr) = node.usr {
                 if usr.starts_with("c:") {

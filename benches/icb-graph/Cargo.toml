@@ -1,0 +1,32 @@
+[package]
+name = "icb-graph-benchmarks"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+icb-graph = { path = "../../crates/icb-graph" }
+icb-common = { path = "../../crates/icb-common" }
+icb-parser = { path = "../../crates/icb-parser" }
+fastrand = "2"
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "build_graph"
+harness = false
+path = "build_graph.rs"
+
+[[bench]]
+name = "resolve_calls"
+harness = false
+path = "resolve_calls.rs"
+
+[[bench]]
+name = "full_analysis"
+harness = false
+path = "full_analysis.rs"
