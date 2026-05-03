@@ -93,7 +93,8 @@
                 switchTab(hash);
             }
         } catch (e) {
-            document.getElementById('content').innerHTML = `<div class="error">Failed to load benchmark data: ${e.message}</div>`;
+            const el = document.getElementById('content');
+            el.textContent = 'Failed to load benchmark data: ' + e.message;
         }
     }
 
