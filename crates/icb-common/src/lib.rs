@@ -13,19 +13,30 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Programming language of a source file or project.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Language {
     Python,
-    /// C/C++ via Clang (default for `cpp`).
     Cpp,
-    /// C/C++ via tree-sitter-cpp (fast, portable).
     CppTreeSitter,
     Rust,
     JavaScript,
+    Go,
+    Java,
+    Ruby,
+    Php,
+    Swift,
+    Kotlin,
+    Scala,
+    CSharp,
+    Lua,
+    R,
+    Bash,
+    Perl,
+    Tcl,
+    Dart,
+    Unknown,
 }
 
-/// Kinds of nodes that can appear in a [`RawNode`](icb_parser::facts::RawNode).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum NodeKind {
     Function,
@@ -35,10 +46,8 @@ pub enum NodeKind {
     CallSite,
     Namespace,
     Enum,
-    // … другие варианты могут быть добавлены
 }
 
-/// Error type for the whole workspace.
 #[derive(Debug, thiserror::Error)]
 pub enum IcbError {
     #[error("I/O error: {0}")]

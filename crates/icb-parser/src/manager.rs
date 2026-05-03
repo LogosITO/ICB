@@ -8,6 +8,8 @@
 //! * [`Language::Cpp`] – Clang (handled externally via `icb-clang`; the
 //!   manager returns an error if called directly, prompting the caller to
 //!   use the Clang path).
+//! * All other languages (including [`Language::Unknown`]) → universal
+//!   heuristic parser.
 //!
 //! # Directory parsing
 //!
@@ -15,16 +17,18 @@
 //! language‑specific extensions and parses each one, returning a vector
 //! of `(relative_path, Vec<RawNode>)`.
 
-use std::path::Path;
-
+use crate::facts::RawNode;
 use icb_common::{IcbError, Language};
+use std::path::Path;
 use walkdir::WalkDir;
 
-use crate::facts::RawNode;
-
-/// Parser manager with no internal state.
-#[derive(Default)]
 pub struct ParserManager;
+
+impl Default for ParserManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl ParserManager {
     pub fn new() -> Self {
@@ -42,11 +46,10 @@ impl ParserManager {
             Language::Python => crate::lang::python::parse_python(source),
             Language::CppTreeSitter => crate::cpp_tree_sitter::parse_cpp_file(source),
             Language::Cpp => Err(IcbError::UnsupportedLanguage(
-                "Cpp backend requires the `icb-clang` crate – use `CppTreeSitter` instead or call \
-                 Clang directly"
-                    .into(),
+                "Cpp backend requires the `icb-clang` crate – use `CppTreeSitter` instead or call Clang directly".into(),
             )),
-            other => Err(IcbError::UnsupportedLanguage(format!("{:?}", other))),
+            Language::Unknown => crate::heuristic_parser::parse_universal(source, ""),
+            _ => crate::heuristic_parser::parse_universal(source, ""),
         }
     }
 
@@ -70,9 +73,11 @@ impl ParserManager {
             let entry = entry.map_err(|e| IcbError::Parse(e.to_string()))?;
             if entry.file_type().is_file() {
                 if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
-                    if extensions.contains(&ext.to_lowercase().as_str()) {
+                    if extensions.is_empty() || extensions.contains(&ext.to_lowercase().as_str()) {
                         files.push(entry.path().to_path_buf());
                     }
+                } else if extensions.is_empty() {
+                    files.push(entry.path().to_path_buf());
                 }
             }
         }
@@ -81,14 +86,7 @@ impl ParserManager {
         let mut results = Vec::new();
         for file_path in files {
             let source = std::fs::read_to_string(&file_path).map_err(IcbError::Io)?;
-            let facts = match lang {
-                Language::Cpp => {
-                    return Err(IcbError::UnsupportedLanguage(
-                        "Cpp backend requires Clang".into(),
-                    ));
-                }
-                _ => self.parse_file(lang, &source)?,
-            };
+            let facts = self.parse_file(lang, &source)?;
             let rel = file_path
                 .strip_prefix(&relative_root)
                 .unwrap_or(&file_path)
@@ -100,27 +98,26 @@ impl ParserManager {
     }
 }
 
-fn extensions_for_language(lang: Language) -> &'static [&'static str] {
+fn extensions_for_language(lang: Language) -> Vec<&'static str> {
     match lang {
-        Language::Python => &["py"],
-        Language::Cpp | Language::CppTreeSitter => &["c", "cpp", "cc", "cxx", "h", "hpp"],
-        Language::Rust => &["rs"],
-        Language::JavaScript => &["js", "jsx", "ts", "tsx"],
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_unsupported_language_returns_error() {
-        let manager = ParserManager::new();
-        let res = manager.parse_file(Language::Rust, "fn main() {}");
-        assert!(res.is_err());
-        match res.unwrap_err() {
-            IcbError::UnsupportedLanguage(_) => {}
-            other => panic!("Expected UnsupportedLanguage, got {:?}", other),
-        }
+        Language::Python => vec!["py"],
+        Language::Cpp | Language::CppTreeSitter => vec!["c", "cpp", "cc", "cxx", "h", "hpp"],
+        Language::Rust => vec!["rs"],
+        Language::JavaScript => vec!["js", "jsx", "ts", "tsx"],
+        Language::Go => vec!["go"],
+        Language::Java => vec!["java"],
+        Language::Ruby => vec!["rb"],
+        Language::Php => vec!["php"],
+        Language::Swift => vec!["swift"],
+        Language::Kotlin => vec!["kt", "kts"],
+        Language::Scala => vec!["scala"],
+        Language::CSharp => vec!["cs"],
+        Language::Lua => vec!["lua"],
+        Language::R => vec!["r"],
+        Language::Bash => vec!["sh", "bash"],
+        Language::Perl => vec!["pl", "pm"],
+        Language::Tcl => vec!["tcl"],
+        Language::Dart => vec!["dart"],
+        Language::Unknown => vec![],
     }
 }

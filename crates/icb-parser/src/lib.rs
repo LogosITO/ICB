@@ -30,5 +30,6 @@
 
 pub mod cpp_tree_sitter;
 pub mod facts;
+pub mod heuristic_parser;
 pub mod lang;
-pub mod manager; // ← новая строка
+pub mod manager;
