@@ -1,12 +1,7 @@
 //! Interactive call graph viewer for the ICB dashboard.
-//!
-//! Renders a Code Property Graph using sigma.js and graphology,
-//! supporting node filtering, focus expansion, and cycle / dead‑code
-//! highlighting.  The graph is automatically laid out with ForceAtlas2
-//! and responds to window resizes.
 
 import { useEffect, useRef, useState } from 'react'
-import Sigma from 'sigma'
+import { Sigma } from 'sigma'
 import Graph from 'graphology'
 import forceAtlas2 from 'graphology-layout-forceatlas2'
 import { useGraph } from '../hooks/useGraph'
@@ -23,7 +18,7 @@ interface Props {
 
 export default function GraphViewer({ focus, onSelectNode }: Props) {
     const containerRef = useRef<HTMLDivElement>(null)
-    const sigmaRef = useRef<Sigma | null>(null)
+    const sigmaRef = useRef<any>(null)
     const graphRef = useRef<Graph | null>(null)
 
     const [depth, setDepth] = useState('2')
@@ -111,8 +106,8 @@ export default function GraphViewer({ focus, onSelectNode }: Props) {
             allowInvalidContainer: true,
         })
 
-        sigma.on('clickNode', ({ node }) => {
-            const attrs = g.getNodeAttributes(node) as any
+        sigma.on('clickNode', ({ node }: any) => {
+            const attrs = g.getNodeAttributes(node)
             if (attrs.label && attrs.label !== '?') {
                 onSelectNode(attrs.label)
             }

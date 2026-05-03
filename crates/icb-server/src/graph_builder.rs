@@ -16,8 +16,8 @@
 //!
 //! # Fact filtering
 //!
-//! Parsing a C++ project yields a large number of facts – not only
-//! functions and classes but also local variables, parameters, and
+//! Parsing a C++ or Python project yields a large number of facts – not
+//! only functions and classes but also local variables, parameters, and
 //! intermediate AST scaffolding.  Only a small subset of these facts is
 //! needed for the call graph:
 //!
@@ -44,9 +44,9 @@
 //! # Parallelism
 //!
 //! The parser itself processes translation units in parallel (see
-//! [`icb_clang::project`]).  Graph construction is intentionally
-//! single‑threaded – [`GraphBuilder::merge`] fuses per‑file sub‑graphs
-//! sequentially, which avoids lock contention on the central
+//! [`icb_parser::manager::ParserManager`]).  Graph construction is
+//! intentionally single‑threaded – [`GraphBuilder::merge`] fuses per‑file
+//! sub‑graphs sequentially, which avoids lock contention on the central
 //! [`petgraph::StableGraph`].
 
 use icb_common::Language;
@@ -70,11 +70,7 @@ use crate::display_name;
 ///
 /// * `project` - Path to the project root or a single file.
 /// * `language` - Programming language of the source files.
-/// * `compile_commands` - Optional path to a `compile_commands.json`.
-/// * `cpp_std` - C++ standard version to pass to the parser.
 /// * `cache_path` - Path to a cache file for faster reloading.
-/// * `no_system_headers` - Whether to exclude system header nodes.
-/// * `max_depth` - Maximum directory depth when scanning for files.
 ///
 /// # Errors
 ///
@@ -82,11 +78,7 @@ use crate::display_name;
 pub fn build_or_load_graph(
     project: &Path,
     language: &str,
-    compile_commands: Option<&PathBuf>,
-    cpp_std: &str,
     cache_path: Option<&PathBuf>,
-    no_system_headers: bool,
-    max_depth: Option<usize>,
 ) -> anyhow::Result<CodePropertyGraph> {
     let lang = parse_language(language)?;
 
@@ -109,48 +101,11 @@ pub fn build_or_load_graph(
     }
 
     let manager = icb_parser::manager::ParserManager::new();
-    let allow_system = !no_system_headers;
-    let file_facts = if lang == Language::Cpp {
-        if let Some(cdb) = compile_commands {
-            let cdb = cdb.canonicalize()?;
-            let base_dir = cdb.parent().unwrap_or(Path::new("."));
-            icb_clang::project::parse_project(&cdb, base_dir, true, allow_system)?
-        } else if project.is_file() {
-            let source = std::fs::read_to_string(project)?;
-            let args = vec![format!("-std={}", cpp_std)];
-            let facts = icb_clang::parser::parse_cpp_file(
-                &source,
-                &args,
-                Some(project.to_str().unwrap_or("unknown")),
-                allow_system,
-            )?;
-            vec![(
-                project
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-                facts,
-            )]
-        } else {
-            let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::project::parse_directory(project, &args, true, max_depth, allow_system)?
-        }
-    } else if project.is_dir() {
+    let file_facts = if project.is_dir() {
         manager.parse_directory(lang, project)?
     } else {
         let source = std::fs::read_to_string(project)?;
-        let facts = if lang == Language::Cpp {
-            let args = vec![format!("-std={}", cpp_std)];
-            icb_clang::parser::parse_cpp_file(
-                &source,
-                &args,
-                Some(project.to_str().unwrap_or("unknown")),
-                allow_system,
-            )?
-        } else {
-            manager.parse_file(lang, &source)?
-        };
+        let facts = manager.parse_file(lang, &source)?;
         vec![(
             project
                 .file_name()
@@ -197,9 +152,9 @@ pub fn build_or_load_graph(
 fn parse_language(s: &str) -> anyhow::Result<Language> {
     match s {
         "python" => Ok(Language::Python),
+        "cpp" | "c++" => Ok(Language::CppTreeSitter),
         "rust" => Ok(Language::Rust),
         "javascript" => Ok(Language::JavaScript),
-        "cpp" | "c++" => Ok(Language::Cpp),
         _ => anyhow::bail!("Unsupported language: {}", s),
     }
 }

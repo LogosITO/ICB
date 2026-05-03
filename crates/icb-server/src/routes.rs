@@ -61,10 +61,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
     );
 }
 
-// ---------------------------------------------------------------------------
-// Query parameter structs
-// ---------------------------------------------------------------------------
-
 #[derive(Deserialize)]
 struct GraphQuery {
     kind: Option<String>,
@@ -81,12 +77,7 @@ struct DiffQuery {
     old: String,
     new: String,
     language: Option<String>,
-    no_system_headers: Option<bool>,
 }
-
-// ---------------------------------------------------------------------------
-// Handlers
-// ---------------------------------------------------------------------------
 
 /// Return a subgraph of the main CPG, filtered by the given parameters.
 ///
@@ -286,36 +277,15 @@ async fn get_files(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
 /// `"Unchanged"`).
 async fn get_diff(query: web::Query<DiffQuery>) -> HttpResponse {
     let lang = query.language.clone().unwrap_or_else(|| "cpp".into());
-    let no_sys = query.no_system_headers.unwrap_or(true);
 
-    let old_graph = graph_builder::build_or_load_graph(
-        Path::new(&query.old),
-        &lang,
-        None,
-        "c++17",
-        None,
-        no_sys,
-        None,
-    );
-    let new_graph = graph_builder::build_or_load_graph(
-        Path::new(&query.new),
-        &lang,
-        None,
-        "c++17",
-        None,
-        no_sys,
-        None,
-    );
+    let old_graph = graph_builder::build_or_load_graph(Path::new(&query.old), &lang, None);
+    let new_graph = graph_builder::build_or_load_graph(Path::new(&query.new), &lang, None);
 
     match (old_graph, new_graph) {
         (Ok(old), Ok(new)) => HttpResponse::Ok().json(diff::diff_graphs(&old, &new)),
         (Err(e), _) | (_, Err(e)) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Helper functions for graph traversal
-// ---------------------------------------------------------------------------
 
 fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
     cpg.graph

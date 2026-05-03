@@ -55,15 +55,8 @@ async fn main() -> anyhow::Result<()> {
     env_logger::init();
     let args = Cli::parse();
 
-    let graph = graph_builder::build_or_load_graph(
-        &args.project,
-        &args.language,
-        args.compile_commands.as_ref(),
-        &args.cpp_std,
-        args.cache.as_ref(),
-        args.no_system_headers,
-        args.max_depth,
-    )?;
+    let graph =
+        graph_builder::build_or_load_graph(&args.project, &args.language, args.cache.as_ref())?;
 
     let graph_data = web::Data::new(Mutex::new(graph));
     let static_dir = args.static_dir.canonicalize().unwrap_or(args.static_dir);
