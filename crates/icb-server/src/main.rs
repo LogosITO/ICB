@@ -3,8 +3,8 @@
 //! Web server for ICB graph visualization and analytics.
 //!
 //! Serves static files from `web/` and exposes a REST API to explore
-//! the Code Property Graph, retrieve node details, and collect project
-//! metrics.
+//! the Code Property Graph, retrieve node details, collect project
+//! metrics, and compare two project snapshots.
 
 use actix_files::Files;
 use actix_web::{web, App, HttpServer};
@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 mod analytics;
+mod diff;
 mod display_name;
 mod graph_builder;
 mod routes;

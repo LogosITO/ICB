@@ -1,0 +1,12 @@
+[
+  {
+    "file": "main.cpp",
+    "arguments": ["-std=c++17", "-x", "c++"],
+    "directory": "."
+  },
+  {
+    "file": "utils.cpp",
+    "arguments": ["-std=c++17", "-x", "c++"],
+    "directory": "."
+  }
+]

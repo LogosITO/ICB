@@ -1,4 +1,39 @@
 //! API route definitions and handlers for the ICB server.
+//!
+//! # Overview
+//!
+//! This module exposes a REST API consumed by the ICB dashboard.  All
+//! routes are mounted under `/api` and operate on a shared
+//! [`CodePropertyGraph`] that is built once at startup and held in an
+//! `Arc<Mutex<…>>`.
+//!
+//! # Endpoints
+//!
+//! | Method | Path | Description |
+//! |---|---|---|
+//! | GET | `/api/graph` | Subgraph filtered by kind, focus, depth, max nodes, cycle/dead highlights |
+//! | GET | `/api/node` | Detailed information about a single function |
+//! | GET | `/api/functions` | All function metrics |
+//! | GET | `/api/classes` | All class metrics |
+//! | GET | `/api/files` | Per‑file aggregate metrics |
+//! | GET | `/api/diff` | Compare two projects or cached graphs |
+//!
+//! # Diff endpoint
+//!
+//! The `/api/diff` endpoint accepts two mandatory query parameters, `old`
+//! and `new`, which can be:
+//!
+//! * A path to a project directory or a single source file.
+//! * A path to a previously cached `.icb` graph file.
+//!
+//! It returns a [`diff::DiffReport`] containing every node and edge
+//! present in either graph, tagged as `Added`, `Removed`, or `Unchanged`.
+//!
+//! # Security
+//!
+//! In its current form the server is intended for local use.  The diff
+//! endpoint can read arbitrary files reachable from the server process;
+//! restrict network access appropriately.
 
 use actix_web::{web, HttpResponse};
 use icb_common::NodeKind;
@@ -7,9 +42,12 @@ use icb_graph::graph::{CodePropertyGraph, Edge, GraphData};
 use petgraph::visit::EdgeRef;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 use std::sync::Mutex;
 
 use crate::analytics;
+use crate::diff;
+use crate::graph_builder;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -18,9 +56,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/node", web::get().to(get_node_detail))
             .route("/functions", web::get().to(get_functions))
             .route("/classes", web::get().to(get_classes))
-            .route("/files", web::get().to(get_files)),
+            .route("/files", web::get().to(get_files))
+            .route("/diff", web::get().to(get_diff)),
     );
 }
+
+// ---------------------------------------------------------------------------
+// Query parameter structs
+// ---------------------------------------------------------------------------
 
 #[derive(Deserialize)]
 struct GraphQuery {
@@ -33,6 +76,30 @@ struct GraphQuery {
     entries: Option<String>,
 }
 
+#[derive(Deserialize)]
+struct DiffQuery {
+    old: String,
+    new: String,
+    language: Option<String>,
+    no_system_headers: Option<bool>,
+}
+
+// ---------------------------------------------------------------------------
+// Handlers
+// ---------------------------------------------------------------------------
+
+/// Return a subgraph of the main CPG, filtered by the given parameters.
+///
+/// # Query parameters
+///
+/// * `kind` – node kind to include (`Function`, `Class`, etc.).
+/// * `max_nodes` – maximum number of nodes in the response (default 200).
+/// * `focus` – name of a function/class to start a focal expansion.
+/// * `depth` – expansion depth when `focus` is used (default 1).
+/// * `show_cycles` – annotate nodes that are part of a call cycle.
+/// * `show_dead` – annotate nodes that are unreachable from the given
+///   `entries` (default `"main"`).
+/// * `entries` – comma‑separated list of entry point names.
 async fn get_graph(
     data: web::Data<Mutex<CodePropertyGraph>>,
     query: web::Query<GraphQuery>,
@@ -128,18 +195,11 @@ async fn get_graph(
     HttpResponse::Ok().json(&value)
 }
 
-#[derive(serde::Serialize)]
-struct NodeDetail {
-    name: String,
-    kind: String,
-    line: usize,
-    file: String,
-    callers: Vec<String>,
-    callees: Vec<String>,
-    is_cycle: bool,
-    is_dead: bool,
-}
-
+/// Return detailed information about a single function.
+///
+/// # Query parameters
+///
+/// * `name` – function name (required).
 async fn get_node_detail(
     data: web::Data<Mutex<CodePropertyGraph>>,
     query: web::Query<HashMap<String, String>>,
@@ -175,36 +235,87 @@ async fn get_node_detail(
         .iter()
         .any(|n| n.name.as_deref() == Some(&name));
 
-    let detail = NodeDetail {
-        name: node.name.clone().unwrap_or_default(),
-        kind: format!("{:?}", node.kind),
-        line: node.start_line,
-        file: node.usr.clone().unwrap_or_default(),
-        callers,
-        callees,
-        is_cycle,
-        is_dead,
-    };
+    let detail = serde_json::json!({
+        "name": node.name.clone().unwrap_or_default(),
+        "kind": format!("{:?}", node.kind),
+        "line": node.start_line,
+        "file": node.usr.clone().unwrap_or_default(),
+        "callers": callers,
+        "callees": callees,
+        "is_cycle": is_cycle,
+        "is_dead": is_dead,
+    });
     HttpResponse::Ok().json(&detail)
 }
 
+/// Return all function metrics (complexity, callers/callees, cycles, dead
+/// code).
 async fn get_functions(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
     let graph = data.lock().unwrap();
     let functions = analytics::collect_function_metrics(&graph);
     HttpResponse::Ok().json(&functions)
 }
 
+/// Return all class metrics (methods, complexity).
 async fn get_classes(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
     let graph = data.lock().unwrap();
     let classes = analytics::collect_class_metrics(&graph);
     HttpResponse::Ok().json(&classes)
 }
 
+/// Return per‑file aggregate metrics (number of functions, classes, calls).
 async fn get_files(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
     let graph = data.lock().unwrap();
     let files = analytics::collect_file_metrics(&graph);
     HttpResponse::Ok().json(&files)
 }
+
+/// Compare two projects or cached graphs and return a diff report.
+///
+/// # Query parameters
+///
+/// * `old` – path to the old project directory, source file, or `.icb`
+///   cache file (required).
+/// * `new` – path to the new project directory, source file, or `.icb`
+///   cache file (required).
+/// * `language` – programming language (default `"cpp"`).
+/// * `no_system_headers` – exclude system header nodes (default `true`).
+///
+/// The response is a JSON object with `nodes` and `edges` arrays, each
+/// element tagged with a `status` field (`"Added"`, `"Removed"`, or
+/// `"Unchanged"`).
+async fn get_diff(query: web::Query<DiffQuery>) -> HttpResponse {
+    let lang = query.language.clone().unwrap_or_else(|| "cpp".into());
+    let no_sys = query.no_system_headers.unwrap_or(true);
+
+    let old_graph = graph_builder::build_or_load_graph(
+        Path::new(&query.old),
+        &lang,
+        None,
+        "c++17",
+        None,
+        no_sys,
+        None,
+    );
+    let new_graph = graph_builder::build_or_load_graph(
+        Path::new(&query.new),
+        &lang,
+        None,
+        "c++17",
+        None,
+        no_sys,
+        None,
+    );
+
+    match (old_graph, new_graph) {
+        (Ok(old), Ok(new)) => HttpResponse::Ok().json(diff::diff_graphs(&old, &new)),
+        (Err(e), _) | (_, Err(e)) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions for graph traversal
+// ---------------------------------------------------------------------------
 
 fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
     cpg.graph
@@ -411,23 +522,4 @@ mod tests {
         let resp = test::call_service(&app, req).await;
         assert!(resp.status().is_success());
     }
-}
-
-#[doc(hidden)]
-pub fn __bench_focal_graph(
-    cpg: &CodePropertyGraph,
-    func_name: &str,
-    max_nodes: usize,
-    depth: usize,
-) -> GraphData {
-    focal_graph(cpg, func_name, max_nodes, depth)
-}
-
-#[doc(hidden)]
-pub fn __bench_subgraph_by_kind(
-    cpg: &CodePropertyGraph,
-    kind: Option<&str>,
-    max_nodes: usize,
-) -> GraphData {
-    subgraph_by_kind(cpg, kind, max_nodes)
 }
