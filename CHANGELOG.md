@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/LogosITO/ICB/compare/v0.1.0...v0.2.0) (2026-05-04)
+
+
+### Features
+
+* add tree-sitter-go and tree-sitter-ruby parsers ([a1b20b1](https://github.com/LogosITO/ICB/commit/a1b20b1f21a154a472a4dd8479769db61c9826e5))
+
 ## 0.1.0 (2026-05-04)
 
 
