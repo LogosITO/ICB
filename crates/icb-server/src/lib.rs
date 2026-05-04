@@ -7,3 +7,4 @@ pub mod diff;
 pub mod display_name;
 pub mod graph_builder;
 pub mod routes;
+pub mod upload;

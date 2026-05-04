@@ -10,6 +10,10 @@ icb-graph = { path = "../icb-graph" }
 icb-clang = { path = "../icb-clang" }
 actix-web = "4"
 actix-files = "0.6"
+actix-multipart = "0.7"
+actix-cors = "0.7"
+futures-util = "0.3"
+tempfile = "3"
 serde = { workspace = true }
 serde_json = "1"
 clap = { workspace = true }
@@ -17,6 +21,8 @@ anyhow = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }
 petgraph = { workspace = true }
+walkdir = "2.5.0"
+zip = "8.6.0"
 
 [dev-dependencies]
 actix-rt = "2"

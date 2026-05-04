@@ -11,89 +11,60 @@
 //!   [`icb_graph::cache`] so that subsequent runs can skip parsing
 //!   entirely.
 //! * **load** – restore a previously cached graph, automatically cleaning
-//!   up node names if needed (e.g. when the cache was created before the
-//!   USR‑to‑display‑name conversion was introduced).
+//!   up node names.
 //!
-//! # Fact filtering
+//! # Robust directory traversal
 //!
-//! Parsing a C++ or Python project yields a large number of facts – not
-//! only functions and classes but also local variables, parameters, and
-//! intermediate AST scaffolding.  Only a small subset of these facts is
-//! needed for the call graph:
+//! When `project` is a directory, the module walks it recursively,
+//! attempts to read each file as UTF‑8, and **silently skips** files that
+//! cannot be decoded (binary files).  Only valid source files are passed
+//! to the parser manager.  This makes it safe to point the server at any
+//! real‑world project without pre‑filtering.
 //!
-//! * [`NodeKind::Function`] – callable entities,
-//! * [`NodeKind::Class`] – type containers,
-//! * [`NodeKind::CallSite`] – edges between callers and callees.
+//! # Auto‑detection of language
 //!
-//! All other facts (`Variable`, `Parameter`, …) are **discarded** before
-//! the graph is built.  This reduces the number of nodes by a factor of
-//! 10–100× and keeps both construction time and memory footprint
-//! predictable, even for large projects.
-//!
-//! # Name normalisation
-//!
-//! Clang emits Unified Symbol Resolution (USR) strings as unique
-//! identifiers.  The [`display_name`] module converts these strings into
-//! human‑readable names (e.g. `c:@F@main#` → `main`).  Normalisation
-//! happens in two places:
-//!
-//! * right after a new graph is built,
-//! * immediately after a graph is loaded from cache (the updated graph is
-//!   written back to the cache so the conversion is a one‑time cost).
-//!
-//! # Parallelism
-//!
-//! The parser itself processes translation units in parallel (see
-//! [`icb_parser::manager::ParserManager`]).  Graph construction is
-//! intentionally single‑threaded – [`GraphBuilder::merge`] fuses per‑file
-//! sub‑graphs sequentially, which avoids lock contention on the central
-//! [`petgraph::StableGraph`].
+//! When `language` is `"auto"`, the module scans the project directory
+//! and picks the dominant language based on file extensions.  Unknown
+//! extensions fall back to the universal heuristic parser.
 
 use icb_common::Language;
 use icb_graph::cache;
 use icb_graph::graph::CodePropertyGraph;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
 use crate::display_name;
 
 /// Builds a new graph or loads it from the specified cache file.
 ///
-/// The resulting graph has **readable names** on every node: any Clang USR
-/// identifiers are automatically converted via
-/// [`display_name::readable_name`].
-///
-/// When loading from an existing cache, names are cleaned before returning
-/// the graph; if any names are changed, the cache is updated so that
-/// subsequent loads are instant.
+/// If `language` is `"auto"`, the dominant language is guessed from the
+/// file extensions inside `project`.
 ///
 /// # Arguments
 ///
 /// * `project` - Path to the project root or a single file.
-/// * `language` - Programming language of the source files.
-/// * `cache_path` - Path to a cache file for faster reloading.
-///
-/// # Errors
-///
-/// Returns an error if the graph cannot be built or loaded.
+/// * `language` - Programming language or `"auto"`.
+/// * `cache_path` - Optional path to a cache file.
 pub fn build_or_load_graph(
     project: &Path,
     language: &str,
     cache_path: Option<&PathBuf>,
 ) -> anyhow::Result<CodePropertyGraph> {
-    let lang = parse_language(language)?;
+    let lang = if language == "auto" {
+        detect_language_from_project(project)
+    } else {
+        parse_language(language)?
+    };
 
     // Try loading from cache first
     if let Some(cache_file) = cache_path {
         if cache_file.exists() {
             log::info!("Loading graph from cache {:?}", cache_file);
             if let Ok(mut g) = cache::load_graph(cache_file) {
-                // Normalise names even for cached graphs
                 display_name::cleanup_node_names(&mut g);
-                // Persist the cleaned version so it's ready next time
                 if let Err(e) = cache::save_graph(&g, cache_file) {
                     log::warn!("Failed to update cache with clean names: {}", e);
-                } else {
-                    log::info!("Cache updated with clean names");
                 }
                 return Ok(g);
             }
@@ -101,10 +72,46 @@ pub fn build_or_load_graph(
     }
 
     let manager = icb_parser::manager::ParserManager::new();
+
     let file_facts = if project.is_dir() {
-        manager.parse_directory(lang, project)?
+        let mut results = Vec::new();
+        for entry in WalkDir::new(project)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            // Skip files that are not readable as UTF‑8 (binary files)
+            let source = match std::fs::read_to_string(path) {
+                Ok(s) => s,
+                Err(_) => {
+                    log::debug!("Skipping non‑UTF‑8 file: {}", path.display());
+                    continue;
+                }
+            };
+            // Attempt to parse the file; skip silently on parse errors
+            let facts = match manager.parse_file(lang, &source) {
+                Ok(facts) => facts,
+                Err(e) => {
+                    log::debug!("Skipping unparseable file {}: {}", path.display(), e);
+                    continue;
+                }
+            };
+            let rel = path
+                .strip_prefix(project)
+                .unwrap_or(path)
+                .display()
+                .to_string();
+            results.push((rel, facts));
+        }
+        results
     } else {
-        let source = std::fs::read_to_string(project)?;
+        let source = match std::fs::read_to_string(project) {
+            Ok(s) => s,
+            Err(e) => {
+                anyhow::bail!("Cannot read file {}: {}", project.display(), e);
+            }
+        };
         let facts = manager.parse_file(lang, &source)?;
         vec![(
             project
@@ -136,9 +143,6 @@ pub fn build_or_load_graph(
     builder.resolve_calls();
 
     let mut cpg = builder.cpg;
-
-    // Convert USR‑based names to readable display names before the graph is
-    // consumed by analytics or the API.
     display_name::cleanup_node_names(&mut cpg);
 
     if let Some(cache_file) = cache_path {
@@ -158,5 +162,39 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
         "go" => Ok(Language::Go),
         "ruby" => Ok(Language::Ruby),
         _ => Ok(Language::Unknown),
+    }
+}
+
+/// Recursively scan a directory and guess the dominant language.
+///
+/// Counts file extensions up to depth 3 and returns the corresponding
+/// [`Language`].  If no files are found or the dominant extension is
+/// unknown, [`Language::Unknown`] is returned, which triggers the
+/// universal heuristic parser.
+pub fn detect_language_from_project(path: &Path) -> Language {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for entry in WalkDir::new(path)
+        .max_depth(3)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
+            *counts.entry(ext.to_lowercase()).or_insert(0) += 1;
+        }
+    }
+    let dominant = counts
+        .into_iter()
+        .max_by_key(|(_, c)| *c)
+        .map(|(ext, _)| ext);
+    match dominant.as_deref() {
+        Some("py") => Language::Python,
+        Some("c") | Some("cpp") | Some("cc") | Some("cxx") | Some("h") | Some("hpp") => {
+            Language::CppTreeSitter
+        }
+        Some("go") => Language::Go,
+        Some("rb") => Language::Ruby,
+        Some("rs") => Language::Rust,
+        Some("js") | Some("ts") | Some("jsx") | Some("tsx") => Language::JavaScript,
+        _ => Language::Unknown,
     }
 }

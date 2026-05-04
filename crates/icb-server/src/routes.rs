@@ -48,6 +48,7 @@ use std::sync::Mutex;
 use crate::analytics;
 use crate::diff;
 use crate::graph_builder;
+use crate::upload;
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
     cfg.service(
@@ -57,7 +58,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/functions", web::get().to(get_functions))
             .route("/classes", web::get().to(get_classes))
             .route("/files", web::get().to(get_files))
-            .route("/diff", web::get().to(get_diff)),
+            .route("/diff", web::get().to(get_diff))
+            .route("/upload", web::post().to(upload::handle_upload)),
     );
 }
 
@@ -432,6 +434,41 @@ fn subgraph_by_kind(cpg: &CodePropertyGraph, kind: Option<&str>, max_nodes: usiz
     GraphData {
         nodes: selected_nodes,
         edges: selected_edges,
+    }
+}
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct LoadRequest {
+    project: String,
+}
+
+/// Load a new project, auto‑detecting its language.
+///
+/// Expects a JSON body with:
+/// - `project`: path to the project directory or file (required).
+///
+/// On success returns `{"status": "ok", "nodes": N, "edges": M}`.
+/// On failure returns 400 with an error message.
+#[allow(dead_code)]
+async fn post_load(
+    data: web::Data<Mutex<CodePropertyGraph>>,
+    body: web::Json<LoadRequest>,
+) -> HttpResponse {
+    match graph_builder::build_or_load_graph(Path::new(&body.project), "auto", None) {
+        Ok(new_graph) => {
+            let nodes = new_graph.graph.node_count();
+            let edges = new_graph.graph.edge_count();
+            if let Ok(mut locked) = data.lock() {
+                *locked = new_graph;
+            }
+            HttpResponse::Ok().json(serde_json::json!({
+                "status": "ok",
+                "nodes": nodes,
+                "edges": edges,
+            }))
+        }
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
 
