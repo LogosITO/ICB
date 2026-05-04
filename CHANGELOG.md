@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/LogosITO/ICB/compare/v0.2.0...v0.3.0) (2026-05-04)
+
+
+### Features
+
+* **benches:** Expanded benchmarks with go and ruby supported languages ([c996221](https://github.com/LogosITO/ICB/commit/c9962214b91eab7da7dd5cfc50630b273e7162c3))
+
 ## [0.2.0](https://github.com/LogosITO/ICB/compare/v0.1.0...v0.2.0) (2026-05-04)
 
 
