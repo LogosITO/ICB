@@ -155,6 +155,8 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
         "cpp" | "c++" => Ok(Language::CppTreeSitter),
         "rust" => Ok(Language::Rust),
         "javascript" | "js" => Ok(Language::JavaScript),
+        "go" => Ok(Language::Go),
+        "ruby" => Ok(Language::Ruby),
         _ => Ok(Language::Unknown),
     }
 }
