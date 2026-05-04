@@ -150,11 +150,13 @@ pub fn build_or_load_graph(
 }
 
 fn parse_language(s: &str) -> anyhow::Result<Language> {
-    match s {
+    match s.to_lowercase().as_str() {
         "python" => Ok(Language::Python),
         "cpp" | "c++" => Ok(Language::CppTreeSitter),
         "rust" => Ok(Language::Rust),
-        "javascript" => Ok(Language::JavaScript),
+        "javascript" | "js" => Ok(Language::JavaScript),
+        "go" | "java" | "ruby" | "php" | "swift" | "kotlin" | "scala" | "csharp" | "lua" | "r"
+        | "bash" | "perl" | "tcl" | "dart" => Ok(Language::Unknown),
         _ => anyhow::bail!("Unsupported language: {}", s),
     }
 }

@@ -33,39 +33,11 @@
 //! The heuristic path processes ~10 million lines of code per second on
 //! a single core (measured on a 2024 desktop CPU).  Memory usage is
 //! linear in the number of extracted facts.
-//!
-//! # Example
-//!
-//! ```rust
-//! use icb_parser::heuristic_parser::parse_universal;
-//!
-//! let facts = parse_universal("def foo(): pass", "dummy.py").unwrap();
-//! assert!(facts.iter().any(|n| n.kind == icb_common::NodeKind::Function));
-//! ```
 
 use icb_common::{IcbError, Language, NodeKind};
 
 use crate::facts::RawNode;
 
-/// Entry point for the universal parser.
-///
-/// Parses source code in *any* programming language and returns a flat list
-/// of facts.  The function automatically detects the language from the file
-/// name or shebang and delegates to a specialised grammar if available
-/// (Python, C/C++ via tree‑sitter).  For all other languages a heuristic
-/// algorithm extracts functions, classes and call expressions.
-///
-/// # Arguments
-///
-/// * `source` – The full content of the file.
-/// * `file_name` – The original name of the file (used for language
-///   detection).  If empty, the heuristic engine will attempt to infer
-///   language from the content.
-///
-/// # Errors
-///
-/// Returns [`IcbError::Parse`] if the source cannot be processed (e.g.
-/// invalid UTF‑8, tree‑sitter failure).
 pub fn parse_universal(source: &str, file_name: &str) -> Result<Vec<RawNode>, IcbError> {
     let lang = detect_language(file_name, source);
 
@@ -81,12 +53,6 @@ pub fn parse_universal(source: &str, file_name: &str) -> Result<Vec<RawNode>, Ic
     Ok(facts)
 }
 
-/// Guess the programming language based on file extension and shebang.
-///
-/// The function first inspects the file extension (everything after the
-/// last `.`).  If the extension is not recognised it examines the first
-/// line of the source for a shebang (`#!`) and returns the corresponding
-/// language.  Unknown files yield [`Language::Unknown`].
 fn detect_language(file_name: &str, source: &str) -> Language {
     let ext = file_name.rsplit('.').next().unwrap_or("").to_lowercase();
     match ext.as_str() {
@@ -113,19 +79,6 @@ fn detect_language(file_name: &str, source: &str) -> Language {
     }
 }
 
-/// Run the full heuristic pipeline on a single source file.
-///
-/// The pipeline consists of:
-/// 1. Tokenising the source.
-/// 2. Extracting brace‑based or indentation‑based blocks.
-/// 3. Classifying each block as a function or class.
-/// 4. Scanning each block for call expressions.
-/// 5. Scanning top‑level code for call expressions outside any block.
-///
-/// # Arguments
-///
-/// * `source` – The full source text.
-/// * `file_name` – The original file name (stored in returned facts).
 fn heuristic_extract(source: &str, file_name: &str) -> Result<Vec<RawNode>, IcbError> {
     let mut facts: Vec<RawNode> = Vec::new();
     let tokens = tokenize(source);
@@ -154,14 +107,80 @@ fn heuristic_extract(source: &str, file_name: &str) -> Result<Vec<RawNode>, IcbE
     }
 
     find_top_level_calls(source, &blocks, &mut facts);
+
+    if facts.is_empty() {
+        pattern_based_extraction(source, file_name, &mut facts);
+    }
+
     Ok(facts)
+}
+
+// ---------------------------------------------------------------------------
+// Pattern‑based fallback extraction
+// ---------------------------------------------------------------------------
+
+fn pattern_based_extraction(source: &str, file_name: &str, facts: &mut Vec<RawNode>) {
+    let clean = preprocess_for_pattern(source);
+    for (lno, line) in clean.lines().enumerate() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some((name, col)) = try_line_function_def(trimmed) {
+            let len = name.len();
+            facts.push(RawNode {
+                language: Language::Unknown,
+                kind: NodeKind::Function,
+                name: Some(name),
+                usr: None,
+                start_line: lno + 1,
+                start_col: col + 1,
+                end_line: lno + 1,
+                end_col: col + 1 + len,
+                children: Vec::new(),
+                source_file: Some(file_name.to_string()),
+            });
+        }
+
+        if let Some((name, col)) = try_line_class_def(trimmed) {
+            let len = name.len();
+            facts.push(RawNode {
+                language: Language::Unknown,
+                kind: NodeKind::Class,
+                name: Some(name),
+                usr: None,
+                start_line: lno + 1,
+                start_col: col + 1,
+                end_line: lno + 1,
+                end_col: col + 1 + len,
+                children: Vec::new(),
+                source_file: Some(file_name.to_string()),
+            });
+        }
+
+        for (call, col) in find_calls_in_line(line) {
+            let len = call.len();
+            facts.push(RawNode {
+                language: Language::Unknown,
+                kind: NodeKind::CallSite,
+                name: Some(call),
+                usr: None,
+                start_line: lno + 1,
+                start_col: col + 1,
+                end_line: lno + 1,
+                end_col: col + 1 + len,
+                children: Vec::new(),
+                source_file: None,
+            });
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Tokenizer
 // ---------------------------------------------------------------------------
 
-/// The kind of a lexical token.
 #[derive(Debug, Clone, PartialEq)]
 enum TokenKind {
     Ident,
@@ -196,7 +215,6 @@ enum TokenKind {
     Unknown,
 }
 
-/// A single token produced by the lexer.
 #[derive(Debug, Clone)]
 struct Token {
     kind: TokenKind,
@@ -206,12 +224,6 @@ struct Token {
     col: usize,
 }
 
-/// Lex the source into a flat sequence of tokens.
-///
-/// Whitespace and comments are skipped (but comment tokens are kept).
-/// Strings, identifiers, numbers, operators and brackets are recognised.
-/// The tokenizer is designed to be fast and work for any C‑like, Python‑like
-/// or brace‑based language.
 fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let bytes = source.as_bytes();
@@ -642,10 +654,6 @@ fn tokenize(source: &str) -> Vec<Token> {
     tokens
 }
 
-/// Determine whether an identifier token belongs to a family of keywords
-/// that introduce functions or classes (in many languages).
-///
-/// `category` must be either `"function"` or `"class"`.
 fn is_keyword(text: &str, category: &str) -> bool {
     let lower = text.to_lowercase();
     match category {
@@ -677,7 +685,6 @@ fn is_keyword(text: &str, category: &str) -> bool {
                 | "abstract"
                 | "final"
                 | "async"
-                | "await"
                 | "let"
                 | "var"
                 | "const"
@@ -685,6 +692,13 @@ fn is_keyword(text: &str, category: &str) -> bool {
                 | "default"
                 | "operator"
                 | "fun"
+                | "subroutine"
+                | "procedure"
+                | "method"
+                | "defun"
+                | "defmacro"
+                | "define"
+                | "lambda"
         ),
         "class" => matches!(
             lower.as_str(),
@@ -707,11 +721,6 @@ fn is_keyword(text: &str, category: &str) -> bool {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Block extraction
-// ---------------------------------------------------------------------------
-
-/// A contiguous code block (function body, class body, etc.).
 #[derive(Debug, Clone)]
 struct Block {
     start_offset: usize,
@@ -720,16 +729,16 @@ struct Block {
     end_line: usize,
     start_col: usize,
     end_col: usize,
+    end_token_idx: usize,
 }
 
-/// Extract brace‑balanced or indentation‑based blocks from the token stream.
 fn extract_blocks(tokens: &[Token], source: &str) -> Vec<Block> {
     let mut blocks = Vec::new();
     let mut i = 0;
     while i < tokens.len() {
         if tokens[i].kind == TokenKind::OpenBrace {
             if let Some(block) = extract_brace_block(tokens, i) {
-                i = block.end_offset;
+                i = block.end_token_idx + 1;
                 blocks.push(block);
             } else {
                 i += 1;
@@ -744,7 +753,6 @@ fn extract_blocks(tokens: &[Token], source: &str) -> Vec<Block> {
     blocks
 }
 
-/// Extract a single block delimited by a matching pair of curly braces.
 fn extract_brace_block(tokens: &[Token], start_idx: usize) -> Option<Block> {
     let mut stack = 1usize;
     let mut end_idx = start_idx + 1;
@@ -768,16 +776,13 @@ fn extract_brace_block(tokens: &[Token], start_idx: usize) -> Option<Block> {
             end_line: end_tok.line,
             start_col: start_tok.col,
             end_col: end_tok.col + 1,
+            end_token_idx: end_idx,
         })
     } else {
         None
     }
 }
 
-/// Extract indentation‑based blocks (Python‑like languages).
-///
-/// A block is defined as a region where the indentation level is greater
-/// than that of the block‑opening line (a line ending with `:`).
 fn extract_indentation_blocks(source: &str) -> Vec<Block> {
     let mut blocks = Vec::new();
     let lines: Vec<&str> = source.lines().collect();
@@ -811,6 +816,7 @@ fn extract_indentation_blocks(source: &str) -> Vec<Block> {
                     end_line,
                     start_col: current_indent + 1,
                     end_col: 1,
+                    end_token_idx: 0,
                 };
                 blocks.push(block);
                 i = end_line - 1;
@@ -822,16 +828,6 @@ fn extract_indentation_blocks(source: &str) -> Vec<Block> {
     blocks
 }
 
-// ---------------------------------------------------------------------------
-// Classification
-// ---------------------------------------------------------------------------
-
-/// Determine whether a block represents a function, class, or something else.
-///
-/// Looks backwards from the block's opening brace for a keyword that
-/// introduces a function or class (using [`is_keyword`]).  Returns the
-/// inferred node kind, the name (if found), and the source location of the
-/// keyword.
 fn classify_block(block: &Block, tokens: &[Token]) -> (NodeKind, Option<String>, usize, usize) {
     let mut keyword = String::new();
     let mut name = None;
@@ -844,25 +840,33 @@ fn classify_block(block: &Block, tokens: &[Token]) -> (NodeKind, Option<String>,
     }
     i = i.saturating_sub(1);
 
-    while i > 0 {
+    while i > 0 && i < tokens.len() {
         let tok = &tokens[i];
-        if tok.kind == TokenKind::Ident
-            || tok.kind == TokenKind::String
-            || tok.kind == TokenKind::Comment
-        {
+        if tok.kind == TokenKind::Ident {
+            let text = &tok.text;
+            if is_keyword(text, "function") || is_keyword(text, "class") {
+                keyword = text.clone();
+                line = tok.line;
+                col = tok.col;
+                if i + 1 < tokens.len() && tokens[i + 1].kind == TokenKind::Ident {
+                    name = Some(tokens[i + 1].text.clone());
+                }
+                break;
+            } else {
+                if name.is_none() {
+                    name = Some(text.clone());
+                    line = tok.line;
+                    col = tok.col;
+                }
+            }
+            i = i.saturating_sub(1);
+            continue;
+        }
+        if tok.kind == TokenKind::String || tok.kind == TokenKind::Comment {
             i = i.saturating_sub(1);
             continue;
         }
         if tok.kind == TokenKind::OpenBrace || tok.kind == TokenKind::CloseBrace {
-            break;
-        }
-        if is_keyword(&tok.text, "function") || is_keyword(&tok.text, "class") {
-            keyword = tok.text.clone();
-            line = tok.line;
-            col = tok.col;
-            if i + 1 < tokens.len() && tokens[i + 1].kind == TokenKind::Ident {
-                name = Some(tokens[i + 1].text.clone());
-            }
             break;
         }
         i = i.saturating_sub(1);
@@ -879,11 +883,6 @@ fn classify_block(block: &Block, tokens: &[Token]) -> (NodeKind, Option<String>,
     }
 }
 
-// ---------------------------------------------------------------------------
-// Call detection
-// ---------------------------------------------------------------------------
-
-/// Scan a slice of the source for call expressions and add them to `facts`.
 fn find_calls_in_range(source: &str, start: usize, end: usize, facts: &mut Vec<RawNode>) {
     let slice = &source[start..end];
     let calls = extract_calls(slice);
@@ -904,15 +903,16 @@ fn find_calls_in_range(source: &str, start: usize, end: usize, facts: &mut Vec<R
     }
 }
 
-/// Extract call expressions (identifiers immediately followed by `(`)
-/// from a string.
-///
-/// Returns a vector of (name, zero‑based line offset).
 fn extract_calls(source_slice: &str) -> Vec<(String, usize)> {
     let mut calls = Vec::new();
     for (line_idx, line) in source_slice.lines().enumerate() {
-        let bytes = line.as_bytes();
+        let trimmed = line.trim();
+        let bytes = trimmed.as_bytes();
         let len = bytes.len();
+        if trimmed.starts_with("//") || trimmed.starts_with('#') || trimmed.is_empty() {
+            continue;
+        }
+
         let mut i = 0;
         while i < len {
             while i < len && !bytes[i].is_ascii_alphanumeric() && bytes[i] != b'_' {
@@ -925,7 +925,7 @@ fn extract_calls(source_slice: &str) -> Vec<(String, usize)> {
             while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
                 i += 1;
             }
-            let ident = &line[start..i];
+            let ident = &trimmed[start..i];
             let mut j = i;
             while j < len && bytes[j] == b' ' || bytes[j] == b'\t' {
                 j += 1;
@@ -935,13 +935,19 @@ fn extract_calls(source_slice: &str) -> Vec<(String, usize)> {
                     calls.push((ident.to_string(), line_idx));
                 }
                 i = j + 1;
+            } else {
+                let rest = trimmed[i..].trim();
+                if rest.is_empty() && !is_keyword(ident, "function") && !is_keyword(ident, "class")
+                {
+                    calls.push((ident.to_string(), line_idx));
+                }
+                i = len;
             }
         }
     }
     calls
 }
 
-/// Scan top‑level code (outside any block) for call expressions.
 fn find_top_level_calls(source: &str, blocks: &[Block], facts: &mut Vec<RawNode>) {
     let mut block_ranges: Vec<(usize, usize)> = blocks
         .iter()
@@ -970,4 +976,144 @@ fn find_top_level_calls(source: &str, blocks: &[Block], facts: &mut Vec<RawNode>
         }
         last_end = end;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Pattern‑based fallback helpers
+// ---------------------------------------------------------------------------
+
+fn preprocess_for_pattern(source: &str) -> String {
+    let mut result = String::with_capacity(source.len());
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut pos = 0;
+
+    while pos < len {
+        let ch = bytes[pos];
+        match ch {
+            b'\n' | b'\r' => {
+                result.push('\n');
+                if ch == b'\r' && pos + 1 < len && bytes[pos + 1] == b'\n' {
+                    pos += 1;
+                }
+                pos += 1;
+            }
+            b'"' | b'\'' | b'`' => {
+                let quote = ch;
+                result.push(' ');
+                pos += 1;
+                while pos < len {
+                    if bytes[pos] == quote && bytes[pos - 1] != b'\\' {
+                        result.push(' ');
+                        pos += 1;
+                        break;
+                    }
+                    if bytes[pos] == b'\n' {
+                        result.push('\n');
+                    } else {
+                        result.push(' ');
+                    }
+                    pos += 1;
+                }
+            }
+            b'/' if pos + 1 < len && bytes[pos + 1] == b'/' => {
+                while pos < len && bytes[pos] != b'\n' {
+                    result.push(' ');
+                    pos += 1;
+                }
+            }
+            b'/' if pos + 1 < len && bytes[pos + 1] == b'*' => {
+                result.push(' ');
+                pos += 2;
+                while pos < len {
+                    if bytes[pos] == b'*' && pos + 1 < len && bytes[pos + 1] == b'/' {
+                        result.push(' ');
+                        pos += 2;
+                        break;
+                    }
+                    result.push(if bytes[pos] == b'\n' { '\n' } else { ' ' });
+                    pos += 1;
+                }
+            }
+            b'#' => {
+                while pos < len && bytes[pos] != b'\n' {
+                    result.push(' ');
+                    pos += 1;
+                }
+            }
+            _ => {
+                result.push(ch as char);
+                pos += 1;
+            }
+        }
+    }
+    result
+}
+
+fn try_line_function_def(line: &str) -> Option<(String, usize)> {
+    let paren_pos = line.find('(')?;
+    let before = &line[..paren_pos].trim_end();
+    let ident = before.rsplit(' ').next()?;
+    if ident.is_empty() || !ident.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+    let before_ident = &before[..before.len() - ident.len()].trim_end();
+    let keyword = before_ident.rsplit(' ').next()?;
+    if is_keyword(keyword, "function") {
+        let col = before.len() - ident.len();
+        Some((ident.to_string(), col))
+    } else {
+        None
+    }
+}
+
+fn try_line_class_def(line: &str) -> Option<(String, usize)> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    for (i, &w) in words.iter().enumerate() {
+        if is_keyword(w, "class") && i + 1 < words.len() {
+            let name = words[i + 1];
+            if name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                let col = words[..=i].iter().map(|s| s.len() + 1).sum::<usize>() - 1;
+                return Some((name.to_string(), col));
+            }
+        }
+    }
+    None
+}
+
+fn find_calls_in_line(line: &str) -> Vec<(String, usize)> {
+    let mut calls = Vec::new();
+    let bytes = line.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        while i < len && !bytes[i].is_ascii_alphanumeric() && bytes[i] != b'_' {
+            i += 1;
+        }
+        if i >= len {
+            break;
+        }
+        let start = i;
+        while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+            i += 1;
+        }
+        let ident = &line[start..i];
+        let mut j = i;
+        while j < len && bytes[j] == b' ' || bytes[j] == b'\t' {
+            j += 1;
+        }
+        if j < len && bytes[j] == b'(' {
+            if !is_keyword(ident, "function") && !is_keyword(ident, "class") {
+                calls.push((ident.to_string(), start));
+            }
+            i = j + 1;
+        } else {
+            let rest = line[i..].trim();
+            if rest.is_empty() && !is_keyword(ident, "function") && !is_keyword(ident, "class") {
+                calls.push((ident.to_string(), start));
+            }
+            i = len;
+        }
+    }
+    calls
 }
