@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/LogosITO/ICB/compare/v0.3.0...v0.4.0) (2026-05-04)
+
+
+### Features
+
+* upload ZIP, CORS fix, robust directory traversal, auto-detect language ([135d5a0](https://github.com/LogosITO/ICB/commit/135d5a014b139b6d6b948ee81e8ff209ebcc944d))
+
 ## [0.3.0](https://github.com/LogosITO/ICB/compare/v0.2.0...v0.3.0) (2026-05-04)
 
 
