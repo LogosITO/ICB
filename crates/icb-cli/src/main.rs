@@ -1,3 +1,12 @@
+//! Command-line interface for the Infinite Code Blueprint (ICB).
+//!
+//! Provides four subcommands:
+//! - **analyze** – parse a project and print graph stats.
+//! - **query** – run analytical queries (functions, callers, callees,
+//!   unused code, cycles, dead code, complexity, DOT export).
+//! - **report** – generate a static HTML report with embedded graph.
+//! - **diff** – compare two project versions and produce an HTML diff.
+
 use clap::Parser;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -7,6 +16,7 @@ use icb_graph::builder::GraphBuilder;
 use icb_graph::{analysis, cache, query, visualizer};
 use icb_parser::manager::ParserManager;
 
+/// Top-level CLI structure.
 #[derive(Parser)]
 #[command(name = "icb")]
 #[command(about = "Infinite Code Blueprint CLI")]
@@ -15,89 +25,130 @@ struct Cli {
     command: Command,
 }
 
+/// Available subcommands.
 #[derive(clap::Subcommand)]
 enum Command {
+    /// Parse and display graph size.
     Analyze {
+        /// Path to source file or directory.
         path: PathBuf,
+        /// Programming language (e.g. cpp, python).
         #[arg(short, long)]
         language: String,
+        /// Path to compile_commands.json (C/C++).
         #[arg(long)]
         compile_commands: Option<PathBuf>,
+        /// C++ standard version.
         #[arg(long, default_value = "c++17")]
         cpp_std: String,
+        /// Path to cache file.
         #[arg(long)]
         cache: Option<PathBuf>,
+        /// Exclude system headers.
         #[arg(long)]
         no_system_headers: bool,
     },
+    /// Run queries on a project.
     Query {
+        /// Project path.
         project: PathBuf,
+        /// Language.
         #[arg(short, long, default_value = "python")]
         language: String,
+        /// compile_commands.json (C/C++).
         #[arg(long)]
         compile_commands: Option<PathBuf>,
+        /// C++ standard.
         #[arg(long, default_value = "c++17")]
         cpp_std: String,
+        /// List functions.
         #[arg(long)]
         functions: bool,
+        /// Show callers of a function.
         #[arg(long)]
         callers: Option<String>,
+        /// Show callees of a function.
         #[arg(long)]
         callees: Option<String>,
+        /// List unused functions.
         #[arg(long)]
         unused: bool,
+        /// Export DOT graph.
         #[arg(long)]
         dot: bool,
+        /// Detect call cycles.
         #[arg(long)]
         cycles: bool,
+        /// Detect dead code (requires --entries).
         #[arg(long)]
         dead_code: bool,
+        /// Entry points for dead code (comma separated).
         #[arg(long, default_value = "main", requires = "dead_code")]
         entries: String,
+        /// Show complex functions.
         #[arg(long)]
         complexity: bool,
+        /// Complexity threshold (AST nodes).
         #[arg(long, default_value = "20", requires = "complexity")]
         threshold: usize,
+        /// Cache file.
         #[arg(long)]
         cache: Option<PathBuf>,
+        /// Exclude system headers.
         #[arg(long)]
         no_system_headers: bool,
     },
-    /// Generate static HTML report with graph and analytics.
+    /// Generate static HTML report.
     Report {
+        /// Project path.
         project: PathBuf,
+        /// Language.
         #[arg(short, long)]
         language: String,
+        /// compile_commands.json.
         #[arg(long)]
         compile_commands: Option<PathBuf>,
+        /// C++ standard.
         #[arg(long, default_value = "c++17")]
         cpp_std: String,
+        /// Cache file.
         #[arg(long)]
         cache: Option<PathBuf>,
+        /// Exclude system headers.
         #[arg(long)]
         no_system_headers: bool,
+        /// Output file (default: report.html).
         #[arg(short, long, default_value = "report.html")]
         output: PathBuf,
     },
-    /// Compare two project versions and generate diff HTML report.
+    /// Diff two project versions.
     Diff {
+        /// Old project path.
         old_project: PathBuf,
+        /// New project path.
         new_project: PathBuf,
+        /// Language.
         #[arg(short, long)]
         language: String,
+        /// compile_commands.json.
         #[arg(long)]
         compile_commands: Option<PathBuf>,
+        /// C++ standard.
         #[arg(long, default_value = "c++17")]
         cpp_std: String,
+        /// Cache file.
         #[arg(long)]
         cache: Option<PathBuf>,
+        /// Exclude system headers.
         #[arg(long)]
         no_system_headers: bool,
+        /// Output file (default: diff.html).
         #[arg(short, long, default_value = "diff.html")]
         output: PathBuf,
     },
 }
 
+/// Run the CLI.
 fn main() -> anyhow::Result<()> {
     env_logger::init();
     let cli = Cli::parse();
@@ -253,6 +304,7 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Holds parameters for building or loading a graph.
 struct BuildOptions<'a> {
     manager: &'a ParserManager,
     lang: Language,
@@ -264,6 +316,7 @@ struct BuildOptions<'a> {
     no_system_headers: bool,
 }
 
+/// Convert a language string to [`Language`].
 fn parse_language(s: &str) -> anyhow::Result<Language> {
     match s {
         "python" => Ok(Language::Python),
@@ -274,6 +327,7 @@ fn parse_language(s: &str) -> anyhow::Result<Language> {
     }
 }
 
+/// Build a graph from source or load from cache.
 fn build_or_load_graph(
     opts: BuildOptions,
 ) -> anyhow::Result<(icb_graph::graph::CodePropertyGraph, usize)> {
@@ -312,6 +366,7 @@ fn build_or_load_graph(
     Ok((cpg, count))
 }
 
+/// Build facts from a project path.
 fn build_file_facts(
     manager: &ParserManager,
     lang: Language,
