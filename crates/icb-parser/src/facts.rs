@@ -1,4 +1,5 @@
 use icb_common::{Language, NodeKind};
+use serde::{Deserialize, Serialize};
 
 /// A single fact extracted from source code by a language parser.
 ///
@@ -6,7 +7,7 @@ use icb_common::{Language, NodeKind};
 /// captures the kind of the node, its location, an optional name, and
 /// structural relationships through `children`. The `source_file` field
 /// allows the graph builder to filter out external headers when desired.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RawNode {
     /// Programming language of the source file.
     pub language: Language,

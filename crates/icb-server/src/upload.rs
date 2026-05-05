@@ -83,9 +83,15 @@ pub async fn handle_upload(
 
     let graph_result = if let Some(langs) = &query.languages {
         let languages: Vec<String> = langs.split(',').map(|s| s.trim().to_string()).collect();
-        graph_builder::build_or_load_graph_multi(tmp.path(), &languages, None, true)
+        graph_builder::build_or_load_graph_multi(
+            tmp.path(),
+            &languages,
+            None, // graph cache file
+            None, // incremental fact cache dir
+            true,
+        )
     } else {
-        graph_builder::build_or_load_graph(tmp.path(), "auto", None, true)
+        graph_builder::build_or_load_graph(tmp.path(), "auto", None, None, true)
     };
 
     drop(tmp);

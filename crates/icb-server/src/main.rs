@@ -29,6 +29,7 @@ mod analytics;
 mod diff;
 mod display_name;
 mod graph_builder;
+mod incremental_cache;
 mod routes;
 mod upload;
 
@@ -53,9 +54,13 @@ pub struct Cli {
     #[arg(long, default_value = "c++17")]
     pub cpp_std: String,
 
-    /// Cache file for faster reloading.
+    /// Cache file for the whole graph (fast reload).
     #[arg(long)]
     pub cache: Option<PathBuf>,
+
+    /// Directory for incremental per‑file fact caching.
+    #[arg(long = "cache-dir")]
+    pub cache_dir: Option<PathBuf>,
 
     /// Port to listen on (default: 8080).
     #[arg(short = 'P', long, default_value = "8080")]
@@ -90,6 +95,7 @@ async fn main() -> anyhow::Result<()> {
             project,
             &args.language,
             args.cache.as_ref(),
+            args.cache_dir.as_ref(),
             args.no_system_headers,
         )?
     } else {
@@ -112,9 +118,7 @@ async fn main() -> anyhow::Result<()> {
 
     HttpServer::new(move || {
         App::new()
-            // CORS настроен для локального фронтенда
             .wrap(actix_cors::Cors::permissive())
-            // Лимит размера запроса (для upload больших папок)
             .app_data(web::PayloadConfig::new(100 * 1024 * 1024))
             .app_data(graph_data.clone())
             .configure(routes::configure)

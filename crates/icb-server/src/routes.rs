@@ -253,10 +253,12 @@ async fn get_diff(query: web::Query<DiffQuery>) -> HttpResponse {
     let old_graph = graph_builder::build_or_load_graph(
         Path::new(&query.old),
         &lang,
-        None,
-        true, // no system headers for diff
+        None, // graph cache file
+        None, // incremental fact cache dir
+        true, // no system headers
     );
-    let new_graph = graph_builder::build_or_load_graph(Path::new(&query.new), &lang, None, true);
+    let new_graph =
+        graph_builder::build_or_load_graph(Path::new(&query.new), &lang, None, None, true);
 
     match (old_graph, new_graph) {
         (Ok(old), Ok(new)) => HttpResponse::Ok().json(diff::diff_graphs(&old, &new)),
@@ -270,8 +272,13 @@ async fn post_load(
     body: web::Json<LoadRequest>,
 ) -> HttpResponse {
     let languages = body.languages.clone().unwrap_or_default();
-    match graph_builder::build_or_load_graph_multi(Path::new(&body.project), &languages, None, true)
-    {
+    match graph_builder::build_or_load_graph_multi(
+        Path::new(&body.project),
+        &languages,
+        None, // graph cache file
+        None, // incremental fact cache dir
+        true,
+    ) {
         Ok(new_graph) => {
             let nodes = new_graph.graph.node_count();
             let edges = new_graph.graph.edge_count();

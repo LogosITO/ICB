@@ -8,3 +8,5 @@ pub mod display_name;
 pub mod graph_builder;
 pub mod routes;
 pub mod upload;
+
+pub mod incremental_cache;
