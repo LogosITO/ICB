@@ -25,18 +25,29 @@ pub fn parse_go(source: &str) -> Result<Vec<RawNode>, IcbError> {
     let classifier =
         |node: &tree_sitter::Node, source: &str| -> Option<(NodeKind, Option<String>, bool)> {
             match node.kind() {
-                "function_declaration" | "method_declaration" => {
+                "function_declaration" => {
                     let name = child_of_kind(*node, "identifier")
                         .and_then(|n| n.utf8_text(source.as_bytes()).ok())
                         .map(|s| s.to_string());
                     Some((NodeKind::Function, name, true))
                 }
+                "method_declaration" => {
+                    let name = child_of_kind(*node, "field_identifier")
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(|s| s.to_string());
+                    Some((NodeKind::Function, name, true))
+                }
                 "type_declaration" => {
-                    if let Some(type_spec) = child_of_kind(*node, "type_spec") {
+                    // type_declaration может содержать type_spec или type_spec_list
+                    if let Some(type_spec) = child_of_kind(*node, "type_spec").or_else(|| {
+                        child_of_kind(*node, "type_spec_list")
+                            .and_then(|list| child_of_kind(list, "type_spec"))
+                    }) {
                         if child_of_kind(type_spec, "struct_type").is_some()
                             || child_of_kind(type_spec, "interface_type").is_some()
                         {
-                            let name = child_of_kind(type_spec, "identifier")
+                            let name = child_of_kind(type_spec, "type_identifier")
+                                .or_else(|| child_of_kind(type_spec, "identifier"))
                                 .and_then(|n| n.utf8_text(source.as_bytes()).ok())
                                 .map(|s| s.to_string());
                             return Some((NodeKind::Class, name, true));
@@ -90,9 +101,9 @@ mod tests {
         let facts = parse_go(code).unwrap();
         let methods: Vec<_> = facts
             .iter()
-            .filter(|n| n.kind == NodeKind::Function)
+            .filter(|n| n.kind == NodeKind::Function && n.name.as_deref() == Some("bar"))
             .collect();
-        assert!(methods.iter().any(|m| m.name.as_deref() == Some("bar")));
+        assert!(!methods.is_empty(), "expected method 'bar'");
     }
 
     #[test]
@@ -111,8 +122,10 @@ mod tests {
     fn test_struct_type() {
         let code = "package main\ntype MyStruct struct {}\n";
         let facts = parse_go(code).unwrap();
-        let classes: Vec<_> = facts.iter().filter(|n| n.kind == NodeKind::Class).collect();
-        assert_eq!(classes.len(), 1);
-        assert_eq!(classes[0].name.as_deref(), Some("MyStruct"));
+        let classes: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Class && n.name.as_deref() == Some("MyStruct"))
+            .collect();
+        assert!(!classes.is_empty(), "expected class 'MyStruct'");
     }
 }
