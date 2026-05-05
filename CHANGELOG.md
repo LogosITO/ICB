@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/LogosITO/ICB/compare/v0.6.0...v0.6.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* simple_function test in icb-clang parser tests ([078a80a](https://github.com/LogosITO/ICB/commit/078a80acf61bc50b54fa9f4c69f2a9d623cf3b98))
+
 ## [0.6.0](https://github.com/LogosITO/ICB/compare/v0.5.3...v0.6.0) (2026-05-05)
 
 
