@@ -15,6 +15,7 @@
 use icb_common::NodeKind;
 use icb_graph::analysis;
 use icb_graph::graph::{CodePropertyGraph, Edge};
+use petgraph::stable_graph::NodeIndex;
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -35,7 +36,17 @@ pub struct FunctionMetric {
 }
 
 /// Computes metrics for every function and class node in the graph.
+///
+/// Builds a name → index lookup once, making per‑node edge counting O(1)
+/// instead of a repeated linear scan over all graph nodes.
 pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> {
+    // Single map from node name to its stable index
+    let name_to_idx: HashMap<String, NodeIndex> = cpg
+        .graph
+        .node_indices()
+        .map(|i| (cpg.graph[i].name.clone().unwrap_or_default(), i))
+        .collect();
+
     let cycles = analysis::detect_call_cycles(cpg);
     let dead = analysis::detect_dead_code(cpg, &["main".to_string()]);
     let complex_list = analysis::detect_complex_functions(cpg, 0);
@@ -56,11 +67,8 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
 
             let loc = node.end_line.saturating_sub(node.start_line) + 1;
 
-            let idx = cpg
-                .graph
-                .node_indices()
-                .find(|&i| cpg.graph[i].name == node.name)
-                .unwrap();
+            // O(1) access to the node index
+            let idx = name_to_idx[&name];
 
             let callers = cpg
                 .graph
@@ -101,7 +109,15 @@ pub struct ClassMetric {
 }
 
 /// Collects metrics for every class node.
+///
+/// Uses the same name → index lookup for O(1) edge counting.
 pub fn collect_class_metrics(cpg: &CodePropertyGraph) -> Vec<ClassMetric> {
+    let name_to_idx: HashMap<String, NodeIndex> = cpg
+        .graph
+        .node_indices()
+        .map(|i| (cpg.graph[i].name.clone().unwrap_or_default(), i))
+        .collect();
+
     let complex_list = analysis::detect_complex_functions(cpg, 0);
 
     cpg.graph
@@ -117,11 +133,7 @@ pub fn collect_class_metrics(cpg: &CodePropertyGraph) -> Vec<ClassMetric> {
 
             let loc = node.end_line.saturating_sub(node.start_line) + 1;
 
-            let idx = cpg
-                .graph
-                .node_indices()
-                .find(|&i| cpg.graph[i].name == node.name)
-                .unwrap();
+            let idx = name_to_idx[&name];
 
             let methods = cpg
                 .graph
