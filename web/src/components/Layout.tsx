@@ -1,4 +1,10 @@
-import { useState, useRef } from 'react'
+//! Layout component for the ICB dashboard.
+//!
+//! Provides a sidebar with navigation tabs and a single drag‑and‑drop
+//! area for ZIP files.  The language is fixed to C/C++ for optimal
+//! analysis with Clang.  Dropping a ZIP automatically starts the analysis.
+
+import { useState, useCallback } from 'react'
 
 type TabId = 'overview' | 'functions' | 'classes' | 'graph' | 'diff'
 
@@ -10,15 +16,6 @@ const tabs: { id: TabId; label: string }[] = [
     { id: 'diff', label: 'Diff' },
 ]
 
-const LANGUAGES = [
-    { id: 'cpp', label: 'C/C++' },
-    { id: 'python', label: 'Python' },
-    { id: 'go', label: 'Go' },
-    { id: 'ruby', label: 'Ruby' },
-    { id: 'rust', label: 'Rust' },
-    { id: 'javascript', label: 'JavaScript' },
-]
-
 interface Props {
     activeTab: TabId
     onTabChange: (tab: TabId) => void
@@ -28,56 +25,19 @@ interface Props {
 const BACKEND = 'http://localhost:8080'
 
 export default function Layout({ activeTab, onTabChange, children }: Props) {
-    const [projectPath, setProjectPath] = useState('')
-    const [selectedLangs, setSelectedLangs] = useState<string[]>(['cpp'])
-    const [loading, setLoading] = useState(false)
     const [message, setMessage] = useState('')
-
-    const fileInputRef = useRef<HTMLInputElement>(null)
     const [uploading, setUploading] = useState(false)
+    const [dragOver, setDragOver] = useState(false)
 
-    const toggleLang = (id: string) => {
-        setSelectedLangs(prev =>
-            prev.includes(id) ? prev.filter(l => l !== id) : [...prev, id]
-        )
-    }
-
-    const analyze = async () => {
-        if (!projectPath.trim()) return
-        setLoading(true)
-        setMessage('')
-        try {
-            const res = await fetch(`${BACKEND}/api/load`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    project: projectPath,
-                    languages: selectedLangs,
-                }),
-            })
-            if (!res.ok) throw new Error(await res.text())
-            const data = await res.json()
-            setMessage(`Loaded: ${data.nodes} nodes, ${data.edges} edges`)
-            window.location.reload()
-        } catch (e: any) {
-            setMessage(`Error: ${e.message}`)
-        } finally {
-            setLoading(false)
-        }
-    }
-
-    const handleZipChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0]
+    const uploadZip = async (file: File) => {
         if (!file) return
-
         setUploading(true)
         setMessage('')
-
         const formData = new FormData()
         formData.append('zip', file)
-
         try {
-            const res = await fetch(`${BACKEND}/api/upload`, {
+            // Always analyse as C/C++ (Clang preferred)
+            const res = await fetch(`${BACKEND}/api/upload?languages=cpp`, {
                 method: 'POST',
                 body: formData,
             })
@@ -91,6 +51,30 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
             setUploading(false)
         }
     }
+
+    const handleDragOver = useCallback((e: React.DragEvent) => {
+        e.preventDefault()
+        setDragOver(true)
+    }, [])
+
+    const handleDragLeave = useCallback((e: React.DragEvent) => {
+        e.preventDefault()
+        setDragOver(false)
+    }, [])
+
+    const handleDrop = useCallback(
+        (e: React.DragEvent) => {
+            e.preventDefault()
+            setDragOver(false)
+            const file = e.dataTransfer.files?.[0]
+            if (file && file.name.endsWith('.zip')) {
+                uploadZip(file)
+            } else {
+                setMessage('Please drop a ZIP file.')
+            }
+        },
+        []
+    )
 
     return (
         <div style={{ display: 'flex', height: '100%' }}>
@@ -158,88 +142,27 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
                 }}
             >
                 <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
-                        <input
-                            type="text"
-                            placeholder="Project path (e.g. ../Vizora)"
-                            value={projectPath}
-                            onChange={e => setProjectPath(e.target.value)}
-                            style={{
-                                flex: 1,
-                                minWidth: '200px',
-                                padding: '8px 12px',
-                                background: 'var(--surface)',
-                                border: '1px solid var(--border)',
-                                borderRadius: '4px',
-                                color: 'var(--text)',
-                                fontSize: '14px',
-                            }}
-                        />
-                        <button
-                            onClick={analyze}
-                            disabled={loading}
-                            style={{
-                                padding: '8px 16px',
-                                background: loading ? '#555' : 'var(--accent)',
-                                border: 'none',
-                                borderRadius: '4px',
-                                color: '#fff',
-                                fontWeight: 600,
-                                cursor: loading ? 'not-allowed' : 'pointer',
-                            }}
-                        >
-                            {loading ? 'Analyzing…' : 'Analyze'}
-                        </button>
-
-                        <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>or</span>
-
-                        <input
-                            type="file"
-                            ref={fileInputRef}
-                            style={{ display: 'none' }}
-                            accept=".zip"
-                            onChange={handleZipChange}
-                        />
-                        <button
-                            onClick={() => fileInputRef.current?.click()}
-                            disabled={uploading}
-                            style={{
-                                padding: '8px 16px',
-                                background: uploading ? '#555' : '#4caf50',
-                                border: 'none',
-                                borderRadius: '4px',
-                                color: '#fff',
-                                fontWeight: 600,
-                                cursor: uploading ? 'not-allowed' : 'pointer',
-                            }}
-                        >
-                            {uploading ? 'Uploading…' : 'Upload ZIP'}
-                        </button>
-                    </div>
-
-                    {/* Language checkboxes */}
-                    <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
-                        <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Languages:</span>
-                        {LANGUAGES.map(lang => (
-                            <label
-                                key={lang.id}
-                                style={{
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '4px',
-                                    color: 'var(--text-secondary)',
-                                    fontSize: '13px',
-                                    cursor: 'pointer',
-                                }}
-                            >
-                                <input
-                                    type="checkbox"
-                                    checked={selectedLangs.includes(lang.id)}
-                                    onChange={() => toggleLang(lang.id)}
-                                />
-                                {lang.label}
-                            </label>
-                        ))}
+                    {/* ----- drag-and-drop zone ----- */}
+                    <div
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                        style={{
+                            border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`,
+                            borderRadius: '8px',
+                            padding: '32px',
+                            textAlign: 'center',
+                            color: 'var(--text-secondary)',
+                            transition: 'border-color 0.2s',
+                            cursor: 'pointer',
+                            background: dragOver ? 'var(--surface-hover)' : 'transparent',
+                        }}
+                    >
+                        {uploading
+                            ? 'Analyzing…'
+                            : dragOver
+                                ? 'Drop your ZIP here'
+                                : 'Drop a C/C++ project ZIP here'}
                     </div>
 
                     {message && (

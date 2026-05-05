@@ -12,6 +12,8 @@
 //! - Pluggable parsing backends (including Clang)
 //! - Observable pipeline (logging-ready)
 //! - Respects `--no-system-headers` flag
+//! - Automatically disables extension filtering when the language is unknown,
+//!   ensuring ZIP uploads work out‑of‑the‑box.
 //!
 //! # Pipeline stages
 //!
@@ -75,6 +77,8 @@ pub fn build_or_load_graph(
 ) -> anyhow::Result<CodePropertyGraph> {
     let lang = resolve_language(project, language)?;
 
+    let strict = lang != Language::Unknown; // отключаем фильтр, если язык неизвестен
+
     let cfg = PipelineConfig {
         languages: {
             let mut set = HashSet::new();
@@ -82,6 +86,7 @@ pub fn build_or_load_graph(
             set
         },
         no_system_headers,
+        strict_extensions: strict,
         ..Default::default()
     };
 
@@ -110,6 +115,9 @@ pub fn build_or_load_graph_multi(
             set
         },
         no_system_headers,
+        strict_extensions: !languages
+            .iter()
+            .any(|l| parse_language(l) == Some(Language::Unknown)),
         ..Default::default()
     };
 
@@ -254,6 +262,10 @@ fn filter_files(
         let lang = detect_language_from_extension(ext);
 
         if !cfg.languages.contains(&lang) {
+            // Если язык неизвестен и фильтр нестрогий — пропускаем все файлы
+            if !cfg.strict_extensions && lang == Language::Unknown {
+                result.push((file, lang));
+            }
             continue;
         }
 
