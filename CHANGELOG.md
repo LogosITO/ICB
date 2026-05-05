@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/LogosITO/ICB/compare/v0.4.0...v0.4.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* multi-language selection, strict extension filtering, class extraction fallback ([5886b01](https://github.com/LogosITO/ICB/commit/5886b01682efa1cf32431a49599109415ee80eab))
+
 ## [0.4.0](https://github.com/LogosITO/ICB/compare/v0.3.0...v0.4.0) (2026-05-04)
 
 
