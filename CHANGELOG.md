@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/LogosITO/ICB/compare/v0.4.1...v0.4.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* release-please ci ([45b6623](https://github.com/LogosITO/ICB/commit/45b662390142a968f39b35c580d782ef6410ef02))
+
 ## [0.4.1](https://github.com/LogosITO/ICB/compare/v0.4.0...v0.4.1) (2026-05-05)
 
 
