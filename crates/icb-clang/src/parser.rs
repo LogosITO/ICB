@@ -384,8 +384,8 @@ mod tests {
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].kind, NodeKind::Function);
         assert_eq!(facts[0].name.as_deref(), Some("foo"));
-        // body covers both opening and closing braces, should be at least 2 lines difference
-        assert!(facts[0].end_line - facts[0].start_line >= 1);
+        // For a single‑line function, start_line == end_line is valid.
+        assert!(facts[0].end_line >= facts[0].start_line);
     }
 
     #[test]

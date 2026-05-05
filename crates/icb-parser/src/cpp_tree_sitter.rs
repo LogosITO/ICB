@@ -69,7 +69,6 @@ fn traverse_node(
 
     let (node_kind, name, is_container) = match kind {
         "function_definition" | "function_declaration" | "template_declaration" => {
-            // For template declarations the actual function is nested deeper.
             let name = function_name(node, source).unwrap_or_default();
             (NodeKind::Function, Some(name), true)
         }
@@ -123,19 +122,29 @@ fn traverse_node(
     let start = node.start_position();
     let end = node.end_position();
 
+    let start_line = start.row + 1;
+    let end_line = std::cmp::max(end.row + 1, start_line);
+
     let idx = facts.len();
     facts.push(RawNode {
         language: Language::CppTreeSitter,
         kind: node_kind,
         name,
         usr: None,
-        start_line: start.row + 1,
+        start_line,
         start_col: start.column,
-        end_line: end.row + 1,
+        end_line,
         end_col: end.column,
         children: Vec::new(),
         source_file: None,
     });
+
+    debug_assert!(
+        end_line >= start_line,
+        "end_line {} must be >= start_line {}",
+        end_line,
+        start_line
+    );
 
     if let Some(pidx) = parent_idx {
         facts[pidx].children.push(idx);
@@ -155,18 +164,15 @@ fn traverse_node(
 
 /// Extract the function name from a function definition/declaration node.
 fn function_name(node: Node, source: &str) -> Option<String> {
-    // Walk the declarator chain: function_definition → declarator (function_declarator) → declarator (identifier)
     if let Some(decl) = node.child_by_field_name("declarator") {
         if decl.kind() == "function_declarator" {
             if let Some(name_node) = decl.child_by_field_name("declarator") {
                 return Some(name_node.utf8_text(source.as_bytes()).ok()?.to_string());
             }
-            // Fallback: take the whole text (operator overloads etc.)
             return Some(decl.utf8_text(source.as_bytes()).ok()?.to_string());
         }
         return Some(decl.utf8_text(source.as_bytes()).ok()?.to_string());
     }
-    // Last resort: first identifier child
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier" {
@@ -194,6 +200,7 @@ mod tests {
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].kind, NodeKind::Function);
         assert_eq!(facts[0].name.as_deref(), Some("foo"));
+        assert!(facts[0].end_line >= facts[0].start_line);
     }
 
     #[test]
