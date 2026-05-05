@@ -48,6 +48,7 @@ export default function FunctionsTable({ onSelect }: Props) {
                     <SortableHeader label="Kind" sortKey="kind" currentKey={sortKey} asc={sortAsc} onClick={toggleSort} />
                     <SortableHeader label="Line" sortKey="line" currentKey={sortKey} asc={sortAsc} onClick={toggleSort} />
                     <SortableHeader label="Complexity" sortKey="complexity" currentKey={sortKey} asc={sortAsc} onClick={toggleSort} />
+                    <SortableHeader label="LOC" sortKey="loc" currentKey={sortKey} asc={sortAsc} onClick={toggleSort} />
                     <SortableHeader label="Callers" sortKey="callers" currentKey={sortKey} asc={sortAsc} onClick={toggleSort} />
                     <SortableHeader label="Callees" sortKey="callees" currentKey={sortKey} asc={sortAsc} onClick={toggleSort} />
                     <th>Status</th>
@@ -60,6 +61,7 @@ export default function FunctionsTable({ onSelect }: Props) {
                         <td style={{ color: 'var(--text-secondary)' }}>{f.kind}</td>
                         <td style={{ color: 'var(--text-secondary)' }}>{f.line}</td>
                         <td>{f.complexity}</td>
+                        <td>{f.loc}</td>
                         <td>{f.callers}</td>
                         <td>{f.callees}</td>
                         <td>

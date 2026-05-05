@@ -59,19 +59,12 @@ use tempfile::Builder;
 
 /// Returns `true` when the given cursor resides in a file that Clang
 /// treats as a system header.
-///
-/// System headers typically include standard library files (e.g.
-/// `/usr/include`, MSVC SDK paths).  This function is used to decide
-/// whether a subtree should be excluded from the fact list.
 fn is_in_system_header(cursor: CXCursor) -> bool {
     unsafe { clang_Location_isInSystemHeader(clang_getCursorLocation(cursor)) != 0 }
 }
 
 /// Returns the absolute path of the source file that contains `cursor`,
 /// or `None` if the information is unavailable.
-///
-/// The Clang API returns a `CXString` which is copied into an owned `String`
-/// and then immediately disposed of via [`clang_disposeString`].
 fn cursor_file(cursor: CXCursor) -> Option<String> {
     unsafe {
         let loc = clang_getCursorLocation(cursor);
@@ -103,22 +96,6 @@ fn cursor_file(cursor: CXCursor) -> Option<String> {
 }
 
 /// Parse a single C/C++ source file and return the extracted facts.
-///
-/// The source is written to a temporary `.cpp` file and Clang is invoked
-/// with the supplied `args` (e.g. `["-std=c++17", "-Iinclude"]`).
-///
-/// # Arguments
-///
-/// * `source` – The raw source code.
-/// * `args` – Command‑line arguments passed to the Clang frontend.
-/// * `_file_name` – Ignored in this implementation; preserved for API
-///   compatibility.
-/// * `allow_system` – If `false`, nodes from system headers are excluded.
-///
-/// # Errors
-///
-/// Returns [`IcbError::Parse`] when the Clang index cannot be created or the
-/// translation unit fails to parse.
 pub fn parse_cpp_file(
     source: &str,
     args: &[String],
@@ -160,7 +137,6 @@ pub fn parse_cpp_file(
         )
     };
 
-    // Reclaim the CString allocations.
     for &cstr_ptr in &arg_ptrs {
         unsafe {
             let _ = CString::from_raw(cstr_ptr as *mut i8);
@@ -187,29 +163,13 @@ pub fn parse_cpp_file(
     Ok(nodes)
 }
 
-/// Mutable state passed through the recursive AST visitor.
-///
-/// This struct is allocated on the stack and a raw pointer is handed to the
-/// C callback.  It is safe because the callback is guaranteed to run on the
-/// same thread and does not outlive the struct.
 struct VisitorContext<'a> {
-    /// The accumulated list of facts.
     nodes: &'a mut Vec<RawNode>,
-    /// The index of the most recently added node that serves as a parent for
-    /// siblings, or `None` at the top level.
     latest_parent: Option<usize>,
-    /// Whether an ancestor is located in a system header.
     in_system: bool,
-    /// Whether system‑header nodes are allowed at all.
     allow_system: bool,
 }
 
-/// Recursively walk the AST rooted at `cursor`.
-///
-/// Returns the index of the node that should be used as the parent for the
-/// next sibling.  If the visited node is **not** a container (variable,
-/// parameter, call expression), the original `parent_idx` is returned so
-/// that the flat list remains shallow.
 fn visit_children(
     cursor: CXCursor,
     nodes: &mut Vec<RawNode>,
@@ -262,7 +222,6 @@ fn visit_children(
             false,
         ),
         _ => {
-            // Transparent node – descend into children without creating a fact.
             let mut ctx = VisitorContext {
                 nodes,
                 latest_parent: parent_idx,
@@ -277,7 +236,11 @@ fn visit_children(
         }
     };
 
-    let (start_line, start_col, end_line, end_col) = cursor_location(cursor);
+    let (start_line, start_col, end_line, end_col) = if node_kind == NodeKind::Function {
+        function_body_location(cursor)
+    } else {
+        cursor_location(cursor)
+    };
 
     let idx = nodes.len();
     nodes.push(RawNode {
@@ -316,10 +279,6 @@ fn visit_children(
     ctx.latest_parent
 }
 
-/// C callback for [`clang_visitChildren`].
-///
-/// Converts the opaque client data pointer back to a [`VisitorContext`] and
-/// delegates to [`visit_children`].
 extern "C" fn visitor_callback(
     cursor: CXCursor,
     _parent: CXCursor,
@@ -336,9 +295,6 @@ extern "C" fn visitor_callback(
     CXChildVisit_Continue
 }
 
-/// Returns the 1‑based line and column coordinates of `cursor`.
-///
-/// The tuple is `(start_line, start_column, end_line, end_column)`.
 fn cursor_location(cursor: CXCursor) -> (usize, usize, usize, usize) {
     let range = unsafe { clang_getCursorExtent(cursor) };
     let start = unsafe { clang_getRangeStart(range) };
@@ -362,9 +318,6 @@ fn cursor_location(cursor: CXCursor) -> (usize, usize, usize, usize) {
     (s_line, s_col, e_line, e_col)
 }
 
-/// Returns the spelling of the given cursor as a Rust [`String`].
-///
-/// The underlying `CXString` is properly disposed.
 fn cursor_spelling(cursor: CXCursor) -> String {
     unsafe {
         let cxstring = clang_getCursorSpelling(cursor);
@@ -379,10 +332,6 @@ fn cursor_spelling(cursor: CXCursor) -> String {
     }
 }
 
-/// Returns the Unified Symbol Resolution (USR) string for the given cursor.
-///
-/// The USR is a persistent identifier that uniquely identifies the entity.
-/// The underlying `CXString` is properly disposed.
 fn cursor_usr(cursor: CXCursor) -> String {
     unsafe {
         let cxstring = clang_getCursorUSR(cursor);
@@ -397,6 +346,33 @@ fn cursor_usr(cursor: CXCursor) -> String {
     }
 }
 
+/// Returns the source location of the first `compound_statement` child of
+/// the given function/method cursor.  Falls back to the cursor's own extent
+/// when no compound statement is present (e.g. for forward declarations).
+fn function_body_location(cursor: CXCursor) -> (usize, usize, usize, usize) {
+    let mut result = cursor_location(cursor);
+    let result_ptr = &mut result as *mut (usize, usize, usize, usize);
+    unsafe {
+        clang_visitChildren(cursor, body_visitor_callback, result_ptr as CXClientData);
+    }
+    result
+}
+
+extern "C" fn body_visitor_callback(
+    cursor: CXCursor,
+    _parent: CXCursor,
+    client_data: CXClientData,
+) -> CXChildVisitResult {
+    if unsafe { clang_getCursorKind(cursor) } == CXCursor_CompoundStmt {
+        let (sl, sc, el, ec) = cursor_location(cursor);
+        let out = unsafe { &mut *(client_data as *mut (usize, usize, usize, usize)) };
+        *out = (sl, sc, el, ec);
+        CXChildVisit_Break
+    } else {
+        CXChildVisit_Continue
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,6 +384,8 @@ mod tests {
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].kind, NodeKind::Function);
         assert_eq!(facts[0].name.as_deref(), Some("foo"));
+        // body covers both opening and closing braces, should be at least 2 lines difference
+        assert!(facts[0].end_line - facts[0].start_line >= 1);
     }
 
     #[test]

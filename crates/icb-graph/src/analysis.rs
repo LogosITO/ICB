@@ -1,3 +1,31 @@
+//! Analysis algorithms for the Code Property Graph.
+//!
+//! This module provides functions that operate on a [`CodePropertyGraph`] to
+//! detect call cycles, dead code, and compute function complexity based on
+//! AST subtree sizes.
+//!
+//! # Cycle detection
+//!
+//! [`detect_call_cycles`] builds a directed graph of function nodes
+//! connected by [`Edge::Call`] edges and runs Kosaraju's algorithm for
+//! strongly connected components (SCC).  Every SCC with more than one node
+//! is reported as a cycle. Self‑loops (single‑node SCCs with a call to
+//! themselves) are also reported.
+//!
+//! # Dead code detection
+//!
+//! [`detect_dead_code`] finds functions that are not reachable from a given
+//! set of entry points (e.g., `main`) via call edges.
+//!
+//! # Complexity analysis
+//!
+//! [`detect_complex_functions`] traverses the `AstChild` subtree of each
+//! function to count the number of AST nodes it contains.  This is a
+//! lightweight proxy for cyclomatic complexity.  The traversal uses a
+//! visited set and a per‑function node limit to prevent infinite loops on
+//! structurally cyclic graphs (e.g., when a class contains methods that
+//! reference the class itself).
+
 use crate::graph::{CodePropertyGraph, Edge, Node};
 use icb_common::NodeKind;
 use petgraph::algo::kosaraju_scc;
@@ -102,7 +130,7 @@ pub fn detect_call_cycles(cpg: &CodePropertyGraph) -> Vec<CallCycle> {
 pub struct ComplexityRecord {
     /// Name of the function.
     pub function_name: String,
-    /// Number of AST nodes inside the function's body (via `AstChild` edges).
+    /// Number of AST nodes inside the function body (via `AstChild` edges).
     pub ast_node_count: usize,
     /// Starting line of the function in source.
     pub start_line: usize,
@@ -338,8 +366,6 @@ mod tests {
     fn test_complex_functions_limit() {
         let cpg = build_test_cpg();
         let complex = detect_complex_functions(&cpg, 0);
-        // Only "f" has AstChild edges
-        assert!(!complex.is_empty());
         let f_record = complex.iter().find(|r| r.function_name == "f").unwrap();
         assert_eq!(f_record.ast_node_count, 11);
         assert!(!f_record.truncated);

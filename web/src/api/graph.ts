@@ -28,6 +28,7 @@ export interface FunctionMetric {
     line: number;
     file?: string;
     complexity: number;
+    loc: number,
     is_cycle: boolean;
     is_dead: boolean;
     callers: number;
