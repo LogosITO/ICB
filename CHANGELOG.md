@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/LogosITO/ICB/compare/v0.7.1...v0.7.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* Go/Ruby/Python parser tests after refactor ([8582245](https://github.com/LogosITO/ICB/commit/85822452d86e1a399f1f64a23756d2e9afe6d68a))
+
 ## [0.7.1](https://github.com/LogosITO/ICB/compare/v0.7.0...v0.7.1) (2026-05-05)
 
 
