@@ -441,8 +441,8 @@ fn subgraph_by_kind(cpg: &CodePropertyGraph, kind: Option<&str>, max_nodes: usiz
 #[allow(dead_code)]
 struct LoadRequest {
     project: String,
+    languages: Option<Vec<String>>,
 }
-
 /// Load a new project, auto‑detecting its language.
 ///
 /// Expects a JSON body with:
@@ -455,7 +455,8 @@ async fn post_load(
     data: web::Data<Mutex<CodePropertyGraph>>,
     body: web::Json<LoadRequest>,
 ) -> HttpResponse {
-    match graph_builder::build_or_load_graph(Path::new(&body.project), "auto", None) {
+    let languages = body.languages.clone().unwrap_or_default();
+    match graph_builder::build_or_load_graph_multi(Path::new(&body.project), &languages, None) {
         Ok(new_graph) => {
             let nodes = new_graph.graph.node_count();
             let edges = new_graph.graph.edge_count();

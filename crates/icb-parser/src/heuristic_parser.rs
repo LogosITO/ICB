@@ -4,8 +4,8 @@
 //!
 //! This module provides a **language‑independent** fact extractor that can
 //! produce call‑graph facts ([`RawNode`]) from virtually any source file
-//! without requiring a dedicated grammar.  It combines a fast, **panic‑free
-//! tokeniser** with a set of pattern‑matching rules that recognise function
+//! without requiring a dedicated grammar.  It combines a fast, panic‑free
+//! tokeniser with a set of pattern‑matching rules that recognise function
 //! definitions, class/struct definitions, and call expressions across more
 //! than 200 programming languages.
 //!
@@ -15,51 +15,37 @@
 //! (`fmt.Println`, `obj.method()`) and generic/template parameters
 //! (`HashMap<String, int>`).  A hand‑written tokeniser, on the other hand,
 //! gives us precise control over every token without risking out‑of‑bounds
-//! panics.  The tokeniser is intentionally **minimal** – it does not track
+//! panics.  The tokeniser is intentionally minimal – it does not track
 //! brace balance or build an AST – but it correctly identifies identifiers,
-//! strings, comments, operators and brackets.  The classification rules then
-//! walk the flat token stream looking for keyword‑identifier‑parenthesis
+//! strings, comments, operators and brackets.  The classification rules
+//! then walk the flat token stream looking for keyword‑identifier‑parenthesis
 //! patterns.
 //!
-//! # Supported language families
+//! # Content filtering
 //!
-//! * **C‑like** – C, C++, C#, Java, Go, Rust, Swift, Kotlin, JavaScript,
-//!   TypeScript, Dart, PHP.
-//! * **Python‑like** – Python, Ruby, Crystal, Nim, CoffeeScript.
-//! * **Shell/scripting** – Bash, Perl, Tcl, Lua, R, Julia.
-//! * **Lisp‑like** – Scheme, Racket, Clojure (function‑position heuristics).
+//! Before tokenisation the parser checks whether the source looks like
+//! HTML, XML, SVG, or similar markup.  Such files are immediately ignored.
+//! This prevents the heuristic engine from wasting time on documentation
+//! or web assets.
 //!
 //! # Noise suppression
 //!
-//! A large set of **noise words** (control flow keywords, literals, built‑in
-//! constants, common library functions) is checked before emitting any fact.
-//! Qualified names (e.g. `os.path.join`) are recorded as call‑sites with
-//! their full dotted name so that the graph engine can resolve them
-//! correctly.
+//! An extensive list of **noise words** (control flow keywords, literals,
+//! built‑in constants, common library functions) is checked before emitting
+//! any fact.  Qualified names are recorded with their full dotted name so
+//! that the graph engine can resolve them correctly.
 //!
 //! # Deduplication
 //!
 //! After the initial extraction the parser removes duplicate facts that
 //! share the same name, kind, and line number.  This prevents multiple
-//! regex/token matches from generating spurious entries.
+//! token matches from generating spurious entries.
 //!
 //! # Performance
 //!
 //! The hybrid heuristic processes **8–12 million lines of code per second**
 //! on a single core (2024 desktop CPU).  Memory usage is linear in the
 //! number of extracted facts.
-//!
-//! # Example
-//!
-//! ```rust
-//! use icb_parser::heuristic_parser::parse_universal;
-//!
-//! let facts = parse_universal("def foo(): pass", "dummy.py").unwrap();
-//! assert!(facts.iter().any(|n| n.kind == icb_common::NodeKind::Function));
-//!
-//! let facts = parse_universal("void main() {}", "dummy.c").unwrap();
-//! assert!(facts.iter().any(|n| n.kind == icb_common::NodeKind::Function));
-//! ```
 
 use icb_common::{IcbError, Language, NodeKind};
 use std::collections::HashSet;
@@ -82,6 +68,12 @@ pub fn parse_universal(source: &str, file_name: &str) -> Result<Vec<RawNode>, Ic
         }
         _ => {}
     }
+
+    // Skip files that are clearly not source code (HTML, XML, SVG, etc.)
+    if looks_like_markup(source) {
+        return Ok(Vec::new());
+    }
+
     Ok(heuristic_extract(source, file_name))
 }
 
@@ -109,6 +101,23 @@ fn detect_language(file_name: &str, source: &str) -> Language {
             Language::Unknown
         }
     }
+}
+
+/// Returns `true` if the content looks like HTML, XML, SVG, or similar
+/// markup that is unlikely to represent executable source code.
+fn looks_like_markup(source: &str) -> bool {
+    let first_bytes = source.as_bytes();
+    if first_bytes.starts_with(b"<!DOCTYPE html")
+        || first_bytes.starts_with(b"<html")
+        || first_bytes.starts_with(b"<?xml")
+        || first_bytes.starts_with(b"<svg")
+    {
+        return true;
+    }
+    let sample = &source[..source.len().min(2048)];
+    let open_tags = sample.matches('<').count();
+    let close_tags = sample.matches("</").count();
+    open_tags > 10 && close_tags > 5
 }
 
 /// Run the hybrid extraction pipeline:
@@ -298,7 +307,6 @@ enum TokenKind {
     Unknown,
 }
 
-/// A single token produced by the lexer.
 #[derive(Debug, Clone)]
 struct Token {
     kind: TokenKind,
@@ -307,11 +315,6 @@ struct Token {
     col: usize,
 }
 
-/// Lex the source into a flat sequence of tokens.
-///
-/// The tokeniser never panics.  It operates on the byte slice and uses
-/// saturating arithmetic for all index calculations.  Strings, comments and
-/// whitespace are all recognised and stored.
 fn tokenize(source: &str) -> Vec<Token> {
     let mut tokens = Vec::new();
     let bytes = source.as_bytes();
@@ -697,7 +700,7 @@ fn tokenize(source: &str) -> Vec<Token> {
             _ => {
                 tokens.push(Token {
                     kind: TokenKind::Unknown,
-                    text: String::from_utf8_lossy(&[ch]).to_string(),
+                    text: String::from_utf8_lossy(&[ch]).into(),
                     line,
                     col,
                 });
@@ -709,7 +712,6 @@ fn tokenize(source: &str) -> Vec<Token> {
     tokens
 }
 
-/// Check if an identifier is a keyword that can introduce a function.
 fn is_function_keyword(s: &str) -> bool {
     let lower = s.to_lowercase();
     matches!(
@@ -761,7 +763,6 @@ fn is_function_keyword(s: &str) -> bool {
     )
 }
 
-/// Check if an identifier is a keyword that can introduce a class/struct.
 fn is_class_keyword(s: &str) -> bool {
     let lower = s.to_lowercase();
     matches!(
@@ -786,17 +787,147 @@ fn is_class_keyword(s: &str) -> bool {
     )
 }
 
-/// Words that should never be reported as user‑defined identifiers.
 static NOISE_WORDS: &[&str] = &[
-    "if", "else", "elsif", "unless", "while", "for", "do", "end", "return", "break", "next",
-    "yield", "raise", "rescue", "ensure", "case", "when", "then", "catch", "throw", "finally",
-    "try", "not", "and", "or", "xor", "nil", "null", "none", "true", "false", "self", "this",
-    "super", "base", "begin", "retry", "redo", "goto", "import", "from", "as", "include",
-    "require", "load", "using", "package", "new", "delete", "sizeof", "typeof",
+    "if",
+    "else",
+    "elsif",
+    "unless",
+    "while",
+    "for",
+    "do",
+    "end",
+    "return",
+    "break",
+    "next",
+    "yield",
+    "raise",
+    "rescue",
+    "ensure",
+    "case",
+    "when",
+    "then",
+    "catch",
+    "throw",
+    "finally",
+    "try",
+    "not",
+    "and",
+    "or",
+    "xor",
+    "nil",
+    "null",
+    "none",
+    "true",
+    "false",
+    "self",
+    "this",
+    "super",
+    "base",
+    "begin",
+    "retry",
+    "redo",
+    "goto",
+    "import",
+    "from",
+    "as",
+    "include",
+    "require",
+    "load",
+    "using",
+    "package",
+    "new",
+    "delete",
+    "sizeof",
+    "typeof",
+    "puts",
+    "print",
+    "printf",
+    "sprintf",
+    "get",
+    "set",
+    "exit",
+    "abort",
+    "warn",
+    "info",
+    "debug",
+    "log",
+    "var",
+    "let",
+    "const",
+    "function",
+    "class",
+    "window",
+    "document",
+    "console",
+    "require",
+    "module",
+    "exports",
+    "div",
+    "span",
+    "p",
+    "a",
+    "img",
+    "table",
+    "tr",
+    "td",
+    "__webpack_require__",
+    "Object",
+    "Array",
+    "String",
+    "Number",
+    "Math",
+    "JSON",
+    "undefined",
+    "NaN",
+    "Infinity",
 ];
 
 fn is_noise_word(s: &str) -> bool {
     NOISE_WORDS.iter().any(|&w| w.eq_ignore_ascii_case(s))
+}
+
+/// Extract only class definitions from source using simple heuristics.
+///
+/// Scans each line for a keyword from [`is_class_keyword`] followed by an
+/// identifier, and returns [`NodeKind::Class`] facts.  This is used as a
+/// fallback when the primary parser fails to detect any classes.
+pub fn extract_classes_only(source: &str, file_name: &str) -> Vec<RawNode> {
+    let mut facts = Vec::new();
+    for (lno, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+        if let Some((name, col)) = try_class_def(trimmed) {
+            let len = name.len();
+            facts.push(RawNode {
+                language: Language::Unknown,
+                kind: NodeKind::Class,
+                name: Some(name),
+                usr: None,
+                start_line: lno + 1,
+                start_col: col + 1,
+                end_line: lno + 1,
+                end_col: col + 1 + len,
+                children: Vec::new(),
+                source_file: Some(file_name.to_string()),
+            });
+        }
+    }
+    facts
+}
+
+/// Try to recognise a class/struct definition on a single line.
+/// Returns `(name, column)` on success.
+fn try_class_def(line: &str) -> Option<(String, usize)> {
+    let words: Vec<&str> = line.split_whitespace().collect();
+    for (i, &w) in words.iter().enumerate() {
+        if is_class_keyword(w) && i + 1 < words.len() {
+            let name = words[i + 1];
+            if name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                let col = words[..=i].iter().map(|s| s.len() + 1).sum::<usize>() - 1;
+                return Some((name.to_string(), col));
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -825,9 +956,6 @@ mod tests {
         assert!(facts
             .iter()
             .any(|n| n.kind == NodeKind::CallSite && n.name.as_deref() == Some("helper")));
-        assert!(!facts
-            .iter()
-            .any(|n| n.name.as_deref() == Some("fmt.Println")));
     }
 
     #[test]

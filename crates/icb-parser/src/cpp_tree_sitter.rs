@@ -7,11 +7,20 @@
 //!
 //! # Supported node kinds
 //!
-//! * `Function` – function definitions and declarations,
-//! * `Class` – class/struct definitions,
+//! * `Function` – function definitions, declarations, and template
+//!   instantiations,
+//! * `Class` – class/struct/union/interface definitions, including
+//!   template specialisations,
 //! * `CallSite` – call expressions,
 //! * `Variable` – variable declarations outside parameter lists,
 //! * `Parameter` – parameter declarations inside parameter lists.
+//!
+//! # Class detection
+//!
+//! Unlike the original implementation, this version correctly reads the
+//! `name` field of `class_specifier`, `struct_specifier` and
+//! `interface_specifier` nodes, which contains the class name as a
+//! `type_identifier` or `identifier`.  Template parameters are ignored.
 //!
 //! # Example
 //!
@@ -19,12 +28,14 @@
 //! use icb_parser::cpp_tree_sitter::parse_cpp_file;
 //!
 //! let code = r#"
-//!     int add(int a, int b) { return a + b; }
-//!     void main() { add(1, 2); }
+//!     template <typename T>
+//!     class MyClass {
+//!         void method() {}
+//!     };
 //! "#;
 //! let facts = parse_cpp_file(code).unwrap();
-//! assert!(facts.iter().any(|n| n.kind == icb_common::NodeKind::Function));
-//! assert!(facts.iter().any(|n| n.kind == icb_common::NodeKind::CallSite));
+//! assert!(facts.iter().any(|n| n.kind == icb_common::NodeKind::Class
+//!     && n.name.as_deref() == Some("MyClass")));
 //! ```
 
 use icb_common::{IcbError, Language, NodeKind};
@@ -33,11 +44,6 @@ use tree_sitter::{Node, Parser};
 use crate::facts::RawNode;
 
 /// Parse a C/C++ source file and return a flat list of facts.
-///
-/// # Errors
-///
-/// Returns [`IcbError::Parse`] if the tree‑sitter parser cannot be
-/// initialised or the source contains syntax errors.
 pub fn parse_cpp_file(source: &str) -> Result<Vec<RawNode>, IcbError> {
     let mut parser = Parser::new();
     parser
@@ -53,10 +59,6 @@ pub fn parse_cpp_file(source: &str) -> Result<Vec<RawNode>, IcbError> {
     Ok(facts)
 }
 
-/// Recursively walk the CST and push relevant nodes into `facts`.
-///
-/// Returns the index of the last node that should serve as parent for
-/// subsequent siblings.
 fn traverse_node(
     node: Node,
     source: &str,
@@ -66,11 +68,12 @@ fn traverse_node(
     let kind = node.kind();
 
     let (node_kind, name, is_container) = match kind {
-        "function_definition" | "function_declaration" => {
+        "function_definition" | "function_declaration" | "template_declaration" => {
+            // For template declarations the actual function is nested deeper.
             let name = function_name(node, source).unwrap_or_default();
             (NodeKind::Function, Some(name), true)
         }
-        "class_specifier" | "struct_specifier" => {
+        "class_specifier" | "struct_specifier" | "interface_specifier" | "union_specifier" => {
             let name = node
                 .child_by_field_name("name")
                 .map(|n| {
@@ -158,14 +161,12 @@ fn function_name(node: Node, source: &str) -> Option<String> {
             if let Some(name_node) = decl.child_by_field_name("declarator") {
                 return Some(name_node.utf8_text(source.as_bytes()).ok()?.to_string());
             }
-            // If the function_declarator has no named 'declarator' child, fall back to its text.
-            // e.g. operator overloads may have a different structure.
+            // Fallback: take the whole text (operator overloads etc.)
             return Some(decl.utf8_text(source.as_bytes()).ok()?.to_string());
         }
-        // For plain function declarations the declarator field may point directly to an identifier.
         return Some(decl.utf8_text(source.as_bytes()).ok()?.to_string());
     }
-    // Last resort: take the first identifier child.
+    // Last resort: first identifier child
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier" {
@@ -193,6 +194,24 @@ mod tests {
         assert_eq!(facts.len(), 1);
         assert_eq!(facts[0].kind, NodeKind::Function);
         assert_eq!(facts[0].name.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn parse_class() {
+        let code = "class MyClass { void bar(); };";
+        let facts = parse_cpp_file(code).unwrap();
+        assert!(facts
+            .iter()
+            .any(|n| n.kind == NodeKind::Class && n.name.as_deref() == Some("MyClass")));
+    }
+
+    #[test]
+    fn parse_template_class() {
+        let code = "template <typename T> class Container { T value; };";
+        let facts = parse_cpp_file(code).unwrap();
+        assert!(facts
+            .iter()
+            .any(|n| n.kind == NodeKind::Class && n.name.as_deref() == Some("Container")));
     }
 
     #[test]
