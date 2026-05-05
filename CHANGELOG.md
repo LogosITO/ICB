@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.3](https://github.com/LogosITO/ICB/compare/v0.4.2...v0.4.3) (2026-05-05)
+
+
+### Bug Fixes
+
+* correct Clang integration, noise filtering, and server stability ([1f8c675](https://github.com/LogosITO/ICB/commit/1f8c675d351e43a5ff63e49d9cf6ddf88e3016f9))
+
 ## [0.4.2](https://github.com/LogosITO/ICB/compare/v0.4.1...v0.4.2) (2026-05-05)
 
 
