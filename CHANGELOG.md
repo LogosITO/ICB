@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.4](https://github.com/LogosITO/ICB/compare/v0.4.3...v0.4.4) (2026-05-05)
+
+
+### Bug Fixes
+
+* robust ZIP upload with Clang, clean output for C++ projects ([e758b3a](https://github.com/LogosITO/ICB/commit/e758b3ac8054ae77a0cfc29e21782c84ada98e8b))
+
 ## [0.4.3](https://github.com/LogosITO/ICB/compare/v0.4.2...v0.4.3) (2026-05-05)
 
 
