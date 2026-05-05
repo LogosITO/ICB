@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB – User Guide</title>
+    <style>
+        :root {
+            --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
+            --border: #333; --hover: #222; --header: #888;
+            --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            --radius: 6px;
+        }
+        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        header { padding: 2rem; border-bottom: 1px solid var(--border); text-align: center; }
+        h1 { font-size: 2rem; color: var(--accent); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            padding: 1.5rem; margin: 1.5rem 0; border-radius: var(--radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        h2 { color: var(--accent); margin-top: 0; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+        h3 { color: var(--accent); margin-top: 1.5rem; }
+        code, pre {
+            font-family: var(--mono);
+            background: #1e1e1e;
+            color: #ccc;
+            border-radius: var(--radius);
+        }
+        pre {
+            padding: 1rem;
+            overflow-x: auto;
+            border: 1px solid var(--border);
+            line-height: 1.5;
+        }
+        code { padding: 0.2em 0.4em; }
+        .flag-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        .flag-table th, .flag-table td {
+            padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border);
+            font-size: 0.9rem; text-align: left;
+        }
+        .flag-table th { color: var(--header); font-weight: 500; background: rgba(255,255,255,0.03); }
+        .flag-table td:first-child { font-family: var(--mono); white-space: nowrap; }
+        .flag-table td:last-child { width: 100%; }
+        a { color: #ccc; }
+        a:hover { color: white; }
+        .note {
+            background: #1e1e1e; border-left: 3px solid var(--accent);
+            padding: 0.8rem 1rem; margin: 1rem 0; border-radius: 0 var(--radius) var(--radius) 0;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>ICB – User Guide</h1>
+    <p>How to use the command‑line tool (<code>icb-cli</code>) and the web server (<code>icb-server</code>)</p>
+</header>
+<div class="container">
+
+    <div class="card">
+        <h2>icb‑cli</h2>
+        <p>
+            The command‑line interface parses a C/C++ or Python project and prints call‑graph
+            information in a human‑readable format. It is the simplest way to get a quick overview
+            of a codebase without starting a server.
+        </p>
+        <pre>cargo run -p icb-cli -- [OPTIONS]</pre>
+
+        <h3>CLI flags</h3>
+        <table class="flag-table">
+            <thead>
+            <tr><th>Flag</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><code>--project &lt;PATH&gt;</code></td><td>Path to the project directory or source file to analyze.</td></tr>
+            <tr><td><code>--language &lt;LANG&gt;</code></td><td>Language of the source files: <code>cpp</code>, <code>c++</code>, <code>python</code>, <code>rust</code>, <code>go</code>, <code>ruby</code>, <code>javascript</code>, or <code>auto</code> (auto‑detect).</td></tr>
+            <tr><td><code>--cache &lt;PATH&gt;</code></td><td>Path to a graph cache file. If the file exists, the graph is loaded from it instead of parsing again. After building, the graph is saved to this file for future use.</td></tr>
+            <tr><td><code>--cache-dir &lt;DIR&gt;</code></td><td>Directory for incremental per‑file fact caching. On the first run, facts are saved per source file with a SHA‑256 hash. On subsequent runs, only changed files are re‑parsed. Dramatically speeds up repeated analysis of large projects.</td></tr>
+            <tr><td><code>--no-system-headers</code></td><td>Exclude nodes that belong to system headers (C/C++ only, Clang backend). Recommended for keeping the graph focused on user code.</td></tr>
+            <tr><td><code>--compile-commands &lt;PATH&gt;</code></td><td>Path to a <code>compile_commands.json</code> file (C/C++). If not provided, a default command line <code>-std=c++17</code> is used.</td></tr>
+            <tr><td><code>--cpp-std &lt;STANDARD&gt;</code></td><td>C++ standard version, e.g. <code>c++17</code>, <code>c++20</code>. Used when no <code>compile_commands.json</code> is given (default: <code>c++17</code>).</td></tr>
+            <tr><td><code>--output-format &lt;FORMAT&gt;</code></td><td>Output format: <code>text</code>, <code>json</code>, or <code>dot</code> (for Graphviz).</td></tr>
+            <tr><td><code>--max-depth &lt;N&gt;</code></td><td>Maximum directory depth when scanning for source files. Helps limit analysis to a specific subtree.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Example</h3>
+        <pre>cargo run -p icb-cli -- \
+  --project ./my_project \
+  --language cpp \
+  --no-system-headers \
+  --cache ./graph.cache \
+  --cache-dir ./.icb_cache</pre>
+        <p class="note">
+            The first run will parse everything and populate the caches. The second run will
+            load unchanged files from the incremental cache and reuse the saved graph if
+            <code>--cache</code> is provided, resulting in near‑instant startup.
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>icb‑server</h2>
+        <p>
+            The web server starts an HTTP API and serves the ICB dashboard. It can analyze a
+            project at startup or dynamically load projects via the REST API end‑points.
+        </p>
+        <pre>cargo run -p icb-server -- [OPTIONS]</pre>
+
+        <h3>Server flags</h3>
+        <table class="flag-table">
+            <thead>
+            <tr><th>Flag</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+            <tr><td><code>--project &lt;PATH&gt;</code></td><td>Optional. Path to a project directory to analyze at startup. If omitted, the server starts with an empty graph and projects can be loaded later via the <code>/api/load</code> or <code>/api/upload</code> endpoints.</td></tr>
+            <tr><td><code>--language &lt;LANG&gt;</code></td><td>Language of the initial project (default: <code>python</code>). Same values as the CLI.</td></tr>
+            <tr><td><code>--cache &lt;PATH&gt;</code></td><td>Path to a graph cache file (see CLI description). The server will try to load the graph from this file at startup and save it after building.</td></tr>
+            <tr><td><code>--cache-dir &lt;DIR&gt;</code></td><td>Directory for incremental per‑file fact caching (see CLI description). Highly recommended for large projects.</td></tr>
+            <tr><td><code>--no-system-headers</code></td><td>Exclude system header nodes from the graph (C/C++ Clang backend).</td></tr>
+            <tr><td><code>--port &lt;PORT&gt;</code></td><td>Port to listen on (default: <code>8080</code>).</td></tr>
+            <tr><td><code>--static-dir &lt;DIR&gt;</code></td><td>Directory containing the frontend static files (default: <code>web</code>). Must contain an <code>index.html</code> file.</td></tr>
+            <tr><td><code>--compile-commands &lt;PATH&gt;</code></td><td>Same as CLI.</td></tr>
+            <tr><td><code>--cpp-std &lt;STANDARD&gt;</code></td><td>Same as CLI (default: <code>c++17</code>).</td></tr>
+            <tr><td><code>--max-depth &lt;N&gt;</code></td><td>Same as CLI – limit directory scan depth.</td></tr>
+            </tbody>
+        </table>
+
+        <h3>Example</h3>
+        <pre>cargo run -p icb-server -- \
+  --project ../Vizora \
+  --language cpp \
+  --cache ./graph.cache \
+  --cache-dir ./.icb_cache \
+  --no-system-headers \
+  --port 8080</pre>
+        <p class="note">
+            When the server starts, open <a href="http://localhost:8080">http://localhost:8080</a>
+            in your browser. The dashboard will show an interactive call graph, function metrics,
+            and cycle detection. You can load additional projects via the UI or REST API without
+            restarting the server.
+        </p>
+    </div>
+
+    <div class="card">
+        <h2>Server API (brief)</h2>
+        <p>The server exposes the following REST end‑points under <code>/api</code>:</p>
+        <table class="flag-table">
+            <tr><td><code>GET /api/graph</code></td><td>Subgraph filtered by kind, focus, depth, max nodes, cycle/dead highlights.</td></tr>
+            <tr><td><code>GET /api/node</code></td><td>Detailed information about a single function.</td></tr>
+            <tr><td><code>GET /api/functions</code></td><td>All function metrics.</td></tr>
+            <tr><td><code>GET /api/classes</code></td><td>All class metrics.</td></tr>
+            <tr><td><code>GET /api/files</code></td><td>Per‑file aggregate metrics.</td></tr>
+            <tr><td><code>GET /api/diff</code></td><td>Compare two projects or cached graphs.</td></tr>
+            <tr><td><code>POST /api/load</code></td><td>Load a new project, auto‑detecting its language.</td></tr>
+            <tr><td><code>POST /api/upload</code></td><td>Upload a ZIP archive and analyze it.</td></tr>
+        </table>
+        <p>See the <a href="./icb_server/index.html">icb-server rustdoc</a> for full details.</p>
+    </div>
+
+</div>
+</body>
+</html>
