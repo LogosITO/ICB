@@ -1,8 +1,3 @@
-//! Benchmark tree-sitter-cpp on a real C/C++ project.
-//!
-//! Reads files from `ICB_BENCH_PROJECT` environment variable, parses each
-//! file with tree‑sitter, and sums the number of facts.
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use icb_common::Language;
 use icb_parser::manager::ParserManager;

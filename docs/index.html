@@ -36,6 +36,8 @@
         .error { color: #c44; font-size: 0.9rem; margin-top: 0.5rem; }
         .header-links { margin-top: 0.5rem; }
         .header-links a { margin: 0 0.5rem; font-size: 0.9rem; }
+        .crate-summary { margin-bottom: 1.5rem; }
+        .crate-summary h3 { margin: 0 0 0.5rem; color: var(--accent); }
     </style>
 </head>
 <body>
@@ -86,23 +88,30 @@
             if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
             const json = await resp.json();
 
-            const scenarios = json.scenarios || {};
+            const crates = json.crates || {};
             const legacy = json.legacy || {};
 
             let html = '';
-            if (Object.keys(scenarios).length > 0) {
-                for (const [scenario, backends] of Object.entries(scenarios)) {
-                    html += `<h3>${scenario}</h3><table><thead><tr><th>Backend</th><th>Time</th></tr></thead><tbody>`;
-                    for (const [backend, timeNs] of Object.entries(backends)) {
-                        const timeMs = timeNs / 1e6;
-                        const display = timeMs >= 1000
-                            ? (timeMs / 1000).toFixed(2) + ' s'
-                            : timeMs.toFixed(2) + ' ms';
-                        html += `<tr><td>${backend}</td><td class="time">${display}</td></tr>`;
+
+            if (Object.keys(crates).length > 0) {
+                // Новая структура: crate → scenario → backend → время
+                for (const [crateName, scenarios] of Object.entries(crates)) {
+                    html += `<div class="crate-summary"><h3>${crateName}</h3>`;
+                    for (const [scenarioName, backends] of Object.entries(scenarios)) {
+                        html += `<table><thead><tr><th>${scenarioName}</th><th>Time</th></tr></thead><tbody>`;
+                        for (const [backend, timeNs] of Object.entries(backends)) {
+                            const timeMs = timeNs / 1e6;
+                            const display = timeMs >= 1000
+                                ? (timeMs / 1000).toFixed(2) + ' s'
+                                : timeMs.toFixed(2) + ' ms';
+                            html += `<tr><td>${backend}</td><td class="time">${display}</td></tr>`;
+                        }
+                        html += '</tbody></table>';
                     }
-                    html += '</tbody></table>';
+                    html += '</div>';
                 }
             } else if (Object.keys(legacy).length > 0) {
+                // Старый формат (на случай обратной совместимости)
                 html += '<table><thead><tr><th>Benchmark</th><th>Time</th></tr></thead><tbody>';
                 for (const [name, entry] of Object.entries(legacy)) {
                     const timeMs = (entry.time_ns / 1e6).toFixed(2) + ' ms';

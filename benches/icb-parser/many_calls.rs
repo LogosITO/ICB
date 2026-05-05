@@ -1,5 +1,3 @@
-//! Benchmark tree‑sitter‑cpp, go, ruby on a file with 10 000 call expressions.
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use icb_parser::cpp_tree_sitter;
 use icb_parser::lang::go;
@@ -17,11 +15,11 @@ fn bench(c: &mut Criterion) {
     });
 
     c.bench_function("ts_go_many_calls_10000", |b| {
-        b.iter(|| go::parse_go_file(black_box(&go_src)).unwrap())
+        b.iter(|| go::parse_go(black_box(&go_src)).unwrap())
     });
 
     c.bench_function("ts_ruby_many_calls_10000", |b| {
-        b.iter(|| ruby::parse_ruby_file(black_box(&ruby_src)).unwrap())
+        b.iter(|| ruby::parse_ruby(black_box(&ruby_src)).unwrap())
     });
 }
 

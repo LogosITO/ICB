@@ -1,5 +1,3 @@
-//! Benchmark tree‑sitter‑cpp, go, ruby on deeply nested structs/modules.
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use icb_parser::cpp_tree_sitter;
 use icb_parser::lang::go;
@@ -17,11 +15,11 @@ fn bench(c: &mut Criterion) {
     });
 
     c.bench_function("ts_go_deeply_nested_5_levels", |b| {
-        b.iter(|| go::parse_go_file(black_box(&go_src)).unwrap())
+        b.iter(|| go::parse_go(black_box(&go_src)).unwrap())
     });
 
     c.bench_function("ts_ruby_deeply_nested_5_levels", |b| {
-        b.iter(|| ruby::parse_ruby_file(black_box(&ruby_src)).unwrap())
+        b.iter(|| ruby::parse_ruby(black_box(&ruby_src)).unwrap())
     });
 }
 

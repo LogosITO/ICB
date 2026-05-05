@@ -46,8 +46,8 @@ fn bench_full_analysis(c: &mut Criterion) {
         let cpg = make_graph(size);
         c.bench_function(&format!("full_analysis_{}_functions", size), |b| {
             b.iter(|| {
-                analysis::collect_function_metrics(black_box(&cpg));
                 analysis::detect_call_cycles(black_box(&cpg));
+                analysis::detect_dead_code(black_box(&cpg), &["main".to_string()]);
             })
         });
     }
