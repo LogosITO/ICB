@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/LogosITO/ICB/compare/v0.5.3...v0.6.0) (2026-05-05)
+
+
+### Features
+
+* **server:** incremental fact caching with SHA-256 per-file hash ([8bac332](https://github.com/LogosITO/ICB/commit/8bac3322860d27d1cbad99db3521ffa7f030363e))
+
 ## [0.5.3](https://github.com/LogosITO/ICB/compare/v0.5.2...v0.5.3) (2026-05-05)
 
 
