@@ -6,12 +6,6 @@ If you discover a security vulnerability in ICB, please **do not** open a public
 
 Instead, email us at [artuhovpetr35@gmail.com] (or your preferred contact). We will respond within 48 hours and work with you to assess and address the issue.
 
-## Supported Versions
-
-| Version | Supported          |
-|---------|--------------------|
-| 0.1.x   | ✅ Supported       |
-
 ## Disclosure Process
 
 1. Reporter sends details privately.
