@@ -22,6 +22,10 @@
 //! entirely.  This can reduce the analysis time for large projects from
 //! seconds to milliseconds.
 //!
+//! The incremental cache is **transparently used by both the Clang and
+//! tree‑sitter backends** – you get fast reloads regardless of the chosen
+//! parser.
+//!
 //! # C/C++: Clang preferred, tree‑sitter fallback
 //!
 //! For C and C++ projects the module **prefers the Clang parser** when the
@@ -160,17 +164,7 @@ fn run_pipeline(
         }
     }
 
-    // --- Attempt Clang for C++ projects ---
-    if cfg.languages.contains(&Language::CppTreeSitter) || cfg.languages.contains(&Language::Cpp) {
-        if let Some(cpg) = try_clang_pipeline(project, &cfg, graph_cache_path) {
-            return Ok(cpg);
-        }
-    }
-
-    // --- General pipeline with incremental caching ---
-    let manager = Arc::new(icb_parser::manager::ParserManager::new());
-    let mut facts: Vec<(String, Vec<RawNode>)> = Vec::new();
-
+    // --- Create incremental fact cache once, shared by all backends ---
     let inc_cache = cfg
         .inc_cache_dir
         .as_ref()
@@ -185,6 +179,17 @@ fn run_pipeline(
         })
         .transpose()?
         .or_else(|| IncrementalCache::new(&project.join(".icb_cache")).ok());
+
+    // --- Attempt Clang with incremental caching ---
+    if cfg.languages.contains(&Language::CppTreeSitter) || cfg.languages.contains(&Language::Cpp) {
+        if let Some(cpg) = try_clang_pipeline(project, &cfg, graph_cache_path, inc_cache.as_ref()) {
+            return Ok(cpg);
+        }
+    }
+
+    // --- General pipeline (tree‑sitter) with the same incremental cache ---
+    let manager = Arc::new(icb_parser::manager::ParserManager::new());
+    let mut facts: Vec<(String, Vec<RawNode>)> = Vec::new();
 
     for entry in WalkDir::new(project)
         .into_iter()
@@ -286,66 +291,98 @@ fn try_clang_pipeline(
     project: &Path,
     cfg: &PipelineConfig,
     graph_cache_path: Option<&PathBuf>,
+    inc_cache: Option<&IncrementalCache>,
 ) -> Option<CodePropertyGraph> {
     #[cfg(feature = "clang")]
     {
-        log::info!("Attempting Clang graph construction...");
+        log::info!("Attempting Clang graph construction with incremental cache...");
         let allow_system = !cfg.no_system_headers;
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            icb_clang::project::parse_directory(
-                project,
-                &["-std=c++17".into()],
-                true,
-                None,
-                allow_system,
-            )
-        }));
 
-        match result {
-            Ok(Ok(file_facts)) => {
-                log::info!("Clang parsed {} files", file_facts.len());
+        let mut facts: Vec<(String, Vec<RawNode>)> = Vec::new();
 
-                let mut builder = icb_graph::builder::GraphBuilder::new();
-                for (_, facts) in file_facts {
-                    let filtered: Vec<_> = facts
-                        .into_iter()
-                        .filter(|f| {
-                            matches!(
-                                f.kind,
-                                icb_common::NodeKind::Function
-                                    | icb_common::NodeKind::Class
-                                    | icb_common::NodeKind::CallSite
+        for entry in WalkDir::new(project)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().is_file())
+        {
+            let path = entry.path();
+            let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+            // Only C++ extensions
+            let allowed = extensions_for_language(Language::CppTreeSitter);
+            if !allowed.contains(&ext) {
+                continue;
+            }
+
+            let rel = path
+                .strip_prefix(project)
+                .unwrap_or(path)
+                .display()
+                .to_string();
+
+            if let Some(cache) = inc_cache {
+                let file_facts = cache
+                    .process_file(
+                        path,
+                        &rel,
+                        Box::new(move |source: &str| -> anyhow::Result<Vec<RawNode>> {
+                            icb_clang::parser::parse_cpp_file(
+                                source,
+                                &["-std=c++17".to_string()],
+                                None,
+                                allow_system,
                             )
-                        })
-                        .filter(|f| {
-                            let name = f.name.as_deref().unwrap_or("");
-                            is_valid_identifier(name, Language::CppTreeSitter)
-                                && !is_javascript_noise(name)
-                                && !is_type_keyword(name)
-                        })
-                        .collect();
-                    let mut local = icb_graph::builder::GraphBuilder::new();
-                    local.ingest_file_facts(&filtered);
-                    builder.merge(local);
-                }
-                builder.resolve_calls();
-                let mut cpg = builder.cpg;
-                display_name::cleanup_node_names(&mut cpg);
-                if let Some(cache_file) = graph_cache_path {
-                    let _ = cache::save_graph(&cpg, cache_file);
-                }
-                log::info!("Clang graph built successfully");
-                Some(cpg)
-            }
-            Ok(Err(e)) => {
-                log::warn!("Clang parse error: {}, falling back to tree-sitter", e);
-                None
-            }
-            Err(panic) => {
-                log::error!("Clang panicked: {:?}, falling back to tree-sitter", panic);
-                None
+                            .map_err(|e| anyhow!(e))
+                        }),
+                    )
+                    .ok()?;
+                facts.push((file_facts.relative_path, file_facts.facts));
+            } else {
+                let source = std::fs::read_to_string(path).ok()?;
+                let file_facts = icb_clang::parser::parse_cpp_file(
+                    &source,
+                    &["-std=c++17".to_string()],
+                    None,
+                    allow_system,
+                )
+                .ok()?;
+                facts.push((rel, file_facts));
             }
         }
+
+        log::info!("Clang processed {} files", facts.len());
+
+        let mut builder = icb_graph::builder::GraphBuilder::new();
+        for (_, file_facts) in facts {
+            let filtered: Vec<_> = file_facts
+                .into_iter()
+                .filter(|f| {
+                    matches!(
+                        f.kind,
+                        icb_common::NodeKind::Function
+                            | icb_common::NodeKind::Class
+                            | icb_common::NodeKind::CallSite
+                    )
+                })
+                .filter(|f| {
+                    let name = f.name.as_deref().unwrap_or("");
+                    is_valid_identifier(name, Language::CppTreeSitter)
+                        && !is_javascript_noise(name)
+                        && !is_type_keyword(name)
+                })
+                .collect();
+            let mut local = icb_graph::builder::GraphBuilder::new();
+            local.ingest_file_facts(&filtered);
+            builder.merge(local);
+        }
+        builder.resolve_calls();
+        let mut cpg = builder.cpg;
+        display_name::cleanup_node_names(&mut cpg);
+        if let Some(cache_file) = graph_cache_path {
+            let _ = cache::save_graph(&cpg, cache_file);
+        }
+        log::info!("Clang graph built successfully");
+        Some(cpg)
     }
     #[cfg(not(feature = "clang"))]
     {
