@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/LogosITO/ICB/compare/v0.7.0...v0.7.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* **server:** replace linear name search with HashMap in analytics ([961de61](https://github.com/LogosITO/ICB/commit/961de61820a0727f7769664133fa4e402cac0596))
+
 ## [0.7.0](https://github.com/LogosITO/ICB/compare/v0.6.2...v0.7.0) (2026-05-05)
 
 
