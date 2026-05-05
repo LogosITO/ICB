@@ -3,12 +3,14 @@
 //! Extracts function declarations, method declarations, call expressions,
 //! and type declarations (struct/interface) from Go source files.
 
-use icb_common::{IcbError, Language, NodeKind};
-use tree_sitter::{Node, Parser};
-
 use crate::facts::RawNode;
+use icb_common::{IcbError, Language, NodeKind};
+use tree_sitter::Parser;
 
-pub fn parse_go_file(source: &str) -> Result<Vec<RawNode>, IcbError> {
+use super::common::{child_of_kind, traverse_node};
+
+/// Parse Go source code and return the extracted facts.
+pub fn parse_go(source: &str) -> Result<Vec<RawNode>, IcbError> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_go::language())
@@ -16,124 +18,101 @@ pub fn parse_go_file(source: &str) -> Result<Vec<RawNode>, IcbError> {
 
     let tree = parser
         .parse(source, None)
-        .ok_or_else(|| IcbError::Parse("tree-sitter parse returned None".into()))?;
+        .ok_or_else(|| IcbError::Parse("tree-sitter parse returned None for Go source".into()))?;
 
     let mut facts = Vec::new();
-    traverse_node(tree.root_node(), source, &mut facts, None);
+
+    let classifier =
+        |node: &tree_sitter::Node, source: &str| -> Option<(NodeKind, Option<String>, bool)> {
+            match node.kind() {
+                "function_declaration" | "method_declaration" => {
+                    let name = child_of_kind(*node, "identifier")
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(|s| s.to_string());
+                    Some((NodeKind::Function, name, true))
+                }
+                "type_declaration" => {
+                    if let Some(type_spec) = child_of_kind(*node, "type_spec") {
+                        if child_of_kind(type_spec, "struct_type").is_some()
+                            || child_of_kind(type_spec, "interface_type").is_some()
+                        {
+                            let name = child_of_kind(type_spec, "identifier")
+                                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                                .map(|s| s.to_string());
+                            return Some((NodeKind::Class, name, true));
+                        }
+                    }
+                    None
+                }
+                "call_expression" => {
+                    let name_node = child_of_kind(*node, "identifier")
+                        .or_else(|| child_of_kind(*node, "selector_expression"));
+                    let name = name_node
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(|s| s.to_string());
+                    Some((NodeKind::CallSite, name, false))
+                }
+                _ => None,
+            }
+        };
+
+    traverse_node(
+        tree.root_node(),
+        source,
+        &mut facts,
+        None,
+        Language::Go,
+        &classifier,
+    );
     Ok(facts)
 }
 
-fn traverse_node(
-    node: Node,
-    source: &str,
-    facts: &mut Vec<RawNode>,
-    parent_idx: Option<usize>,
-) -> Option<usize> {
-    let kind = node.kind();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icb_common::NodeKind;
 
-    let (node_kind, name, is_container) = match kind {
-        "function_declaration" | "method_declaration" => {
-            let name = child_of_kind(node, "identifier")
-                .map(|n| {
-                    n.utf8_text(source.as_bytes())
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .unwrap_or_default();
-            (NodeKind::Function, Some(name), true)
-        }
-        "type_declaration" => {
-            if let Some(type_spec) = child_of_kind(node, "type_spec") {
-                if child_of_kind(type_spec, "struct_type").is_some()
-                    || child_of_kind(type_spec, "interface_type").is_some()
-                {
-                    let name = child_of_kind(type_spec, "identifier")
-                        .map(|n| {
-                            n.utf8_text(source.as_bytes())
-                                .unwrap_or_default()
-                                .to_string()
-                        })
-                        .unwrap_or_default();
-                    return Some(create_node(
-                        facts,
-                        NodeKind::Class,
-                        Some(name),
-                        &node,
-                        parent_idx,
-                    ));
-                }
-            }
-            let mut current_parent = parent_idx;
-            for child in node.children(&mut node.walk()) {
-                current_parent = traverse_node(child, source, facts, current_parent);
-            }
-            return current_parent;
-        }
-        "call_expression" => {
-            let name_node = child_of_kind(node, "identifier")
-                .or_else(|| child_of_kind(node, "selector_expression"));
-            let name = name_node
-                .map(|n| {
-                    n.utf8_text(source.as_bytes())
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .unwrap_or_default();
-            (NodeKind::CallSite, Some(name), false)
-        }
-        _ => {
-            let mut current_parent = parent_idx;
-            for child in node.children(&mut node.walk()) {
-                current_parent = traverse_node(child, source, facts, current_parent);
-            }
-            return current_parent;
-        }
-    };
-
-    let idx = create_node(facts, node_kind, name, &node, parent_idx);
-    if is_container {
-        let new_parent = Some(idx);
-        let mut current_parent = new_parent;
-        for child in node.children(&mut node.walk()) {
-            current_parent = traverse_node(child, source, facts, current_parent);
-        }
-        new_parent
-    } else {
-        parent_idx
+    #[test]
+    fn test_simple_function() {
+        let code = "package main\nfunc foo() {}\n";
+        let facts = parse_go(code).unwrap();
+        let funcs: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function)
+            .collect();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name.as_deref(), Some("foo"));
     }
-}
 
-fn create_node(
-    facts: &mut Vec<RawNode>,
-    kind: NodeKind,
-    name: Option<String>,
-    node: &Node,
-    parent_idx: Option<usize>,
-) -> usize {
-    let start = node.start_position();
-    let end = node.end_position();
-
-    let idx = facts.len();
-    facts.push(RawNode {
-        language: Language::Go,
-        kind,
-        name,
-        usr: None,
-        start_line: start.row + 1,
-        start_col: start.column,
-        end_line: end.row + 1,
-        end_col: end.column,
-        children: Vec::new(),
-        source_file: None,
-    });
-    if let Some(pidx) = parent_idx {
-        facts[pidx].children.push(idx);
+    #[test]
+    fn test_method() {
+        let code = "package main\ntype S struct{}\nfunc (s S) bar() {}\n";
+        let facts = parse_go(code).unwrap();
+        let methods: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function)
+            .collect();
+        assert!(methods.iter().any(|m| m.name.as_deref() == Some("bar")));
     }
-    idx
-}
 
-fn child_of_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
-    let mut cursor = node.walk();
-    let children: Vec<Node> = node.children(&mut cursor).collect();
-    children.into_iter().find(|child| child.kind() == kind)
+    #[test]
+    fn test_call_expression() {
+        let code = "package main\nfunc baz() { foo() }\n";
+        let facts = parse_go(code).unwrap();
+        let calls: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::CallSite)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn test_struct_type() {
+        let code = "package main\ntype MyStruct struct {}\n";
+        let facts = parse_go(code).unwrap();
+        let classes: Vec<_> = facts.iter().filter(|n| n.kind == NodeKind::Class).collect();
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].name.as_deref(), Some("MyStruct"));
+    }
 }

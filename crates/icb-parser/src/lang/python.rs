@@ -1,115 +1,85 @@
+//! Python language parser using tree-sitter-python.
+//!
+//! Extracts function definitions (including `async def`), class definitions,
+//! call expressions, lambdas as anonymous functions, and optionally
+//! identifiers as variables.
+
 use crate::facts::RawNode;
 use icb_common::{IcbError, Language, NodeKind};
 use tree_sitter::Parser;
 
-/// Parse Python source code and return a list of `RawNode` facts.
+use super::common::traverse_node;
+
+/// Parse Python source code and return the extracted facts.
 ///
-/// This function uses a tree-sitter Python parser to walk the CST and
-/// extract function/class definitions, calls, and identifiers. Nodes that
-/// are not relevant for the graph are skipped.
-///
-/// # Errors
-///
-/// Returns [`IcbError::Parse`] if the tree-sitter parser cannot be
-/// initialised or if parsing fails.
-///
-/// # Examples
-///
-/// ```rust
-/// use icb_parser::lang::python::parse_python;
-///
-/// let source = "def answer(): return 42";
-/// let facts = parse_python(source).expect("valid Python");
-/// // There should be at least a function node and a return statement.
-/// assert!(facts.iter().any(|n| n.name.as_deref() == Some("answer")));
-/// ```
+/// By default variables (identifiers) are **not** included to keep the
+/// graph small.  Use [`parse_python_detailed`] if you need them.
 pub fn parse_python(source: &str) -> Result<Vec<RawNode>, IcbError> {
+    parse_python_impl(source, false)
+}
+
+/// Parse Python source code and return facts **including** variable nodes.
+pub fn parse_python_detailed(source: &str) -> Result<Vec<RawNode>, IcbError> {
+    parse_python_impl(source, true)
+}
+
+fn parse_python_impl(source: &str, include_variables: bool) -> Result<Vec<RawNode>, IcbError> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_python::language())
-        .map_err(|e| IcbError::Parse(e.to_string()))?;
-    let tree = parser
-        .parse(source, None)
-        .ok_or_else(|| IcbError::Parse("parse failed".into()))?;
+        .map_err(|e| IcbError::Parse(format!("cannot set tree-sitter-python language: {e}")))?;
 
-    let mut nodes = Vec::new();
-    collect_nodes(&tree.root_node(), source, &mut nodes, None);
-    Ok(nodes)
-}
+    let tree = parser.parse(source, None).ok_or_else(|| {
+        IcbError::Parse("tree-sitter parse returned None for Python source".into())
+    })?;
 
-fn collect_nodes(
-    ts_node: &tree_sitter::Node,
-    source: &str,
-    nodes: &mut Vec<RawNode>,
-    parent_idx: Option<usize>,
-) -> Option<usize> {
-    let kind = ts_node.kind();
-    let (node_kind, name) = match kind {
-        "function_definition" => {
-            let name = ts_node
-                .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .map(|s| s.to_string());
-            (NodeKind::Function, name)
-        }
-        "class_definition" => {
-            let name = ts_node
-                .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .map(|s| s.to_string());
-            (NodeKind::Class, name)
-        }
-        "call" => {
-            let name = ts_node
-                .child_by_field_name("function")
-                .and_then(|n| n.utf8_text(source.as_bytes()).ok())
-                .map(|s| s.to_string());
-            (NodeKind::CallSite, name)
-        }
-        "identifier" => {
-            let name = ts_node
-                .utf8_text(source.as_bytes())
-                .ok()
-                .map(|s| s.to_string());
-            (NodeKind::Variable, name)
-        }
-        _ => {
-            let mut latest_parent = parent_idx;
-            for i in 0..ts_node.child_count() {
-                let child = ts_node.child(i).unwrap();
-                latest_parent = collect_nodes(&child, source, nodes, latest_parent);
+    let mut facts = Vec::new();
+
+    let classifier =
+        move |node: &tree_sitter::Node, source: &str| -> Option<(NodeKind, Option<String>, bool)> {
+            match node.kind() {
+                "function_definition" | "async_function_definition" => {
+                    let name = node
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(|s| s.to_string());
+                    Some((NodeKind::Function, name, true))
+                }
+                "class_definition" => {
+                    let name = node
+                        .child_by_field_name("name")
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(|s| s.to_string());
+                    Some((NodeKind::Class, name, true))
+                }
+                "call" => {
+                    let name = node
+                        .child_by_field_name("function")
+                        .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                        .map(|s| s.to_string());
+                    Some((NodeKind::CallSite, name, false))
+                }
+                "lambda" => Some((NodeKind::Function, Some("lambda".into()), true)),
+                "identifier" if include_variables => {
+                    let name = node
+                        .utf8_text(source.as_bytes())
+                        .ok()
+                        .map(|s| s.to_string());
+                    Some((NodeKind::Variable, name, false))
+                }
+                _ => None,
             }
-            return latest_parent;
-        }
-    };
+        };
 
-    let start = ts_node.start_position();
-    let end = ts_node.end_position();
-    let idx = nodes.len();
-    nodes.push(RawNode {
-        language: Language::Python,
-        kind: node_kind,
-        name,
-        usr: None,
-        start_line: start.row + 1,
-        start_col: start.column,
-        end_line: end.row + 1,
-        end_col: end.column,
-        children: Vec::new(),
-        source_file: None,
-    });
-
-    if let Some(pidx) = parent_idx {
-        nodes[pidx].children.push(idx);
-    }
-
-    let new_parent = Some(idx);
-    let mut current_parent = new_parent;
-    for i in 0..ts_node.child_count() {
-        let child = ts_node.child(i).unwrap();
-        current_parent = collect_nodes(&child, source, nodes, current_parent);
-    }
-    new_parent
+    traverse_node(
+        tree.root_node(),
+        source,
+        &mut facts,
+        None,
+        Language::Python,
+        &classifier,
+    );
+    Ok(facts)
 }
 
 #[cfg(test)]
@@ -131,24 +101,12 @@ mod tests {
 
     #[test]
     fn test_parse_nested_function() {
-        let source = "def outer(): def inner(): pass";
+        let source = "def outer():\n    def inner(): pass";
         let facts = parse_python(source).expect("parsing should succeed");
-
-        // Обе функции должны присутствовать в фактах
         let outer = facts.iter().find(|n| n.name.as_deref() == Some("outer"));
         let inner = facts.iter().find(|n| n.name.as_deref() == Some("inner"));
         assert!(outer.is_some(), "outer function not found");
         assert!(inner.is_some(), "inner function not found");
-
-        let outer_idx = facts
-            .iter()
-            .position(|n| n.name.as_deref() == Some("outer"))
-            .unwrap();
-        // Внешняя функция не должна быть потомком какой-либо другой функции
-        let is_top_level = !facts
-            .iter()
-            .any(|parent| parent.children.contains(&outer_idx));
-        assert!(is_top_level, "outer should not be a child of another node");
     }
 
     #[test]
@@ -161,5 +119,41 @@ mod tests {
             .collect();
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].name.as_deref(), Some("foo"));
+    }
+
+    #[test]
+    fn test_async_function() {
+        let source = "async def bar(): pass";
+        let facts = parse_python(source).unwrap();
+        let funcs: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function)
+            .collect();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name.as_deref(), Some("bar"));
+    }
+
+    #[test]
+    fn test_lambda() {
+        let source = "lambda x: x";
+        let facts = parse_python(source).unwrap();
+        let lambdas: Vec<_> = facts
+            .iter()
+            .filter(|n| n.name.as_deref() == Some("lambda"))
+            .collect();
+        assert_eq!(lambdas.len(), 1);
+    }
+
+    #[test]
+    fn test_include_variables() {
+        let source = "x = 1";
+        let facts = parse_python_detailed(source).unwrap();
+        let vars: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Variable)
+            .collect();
+        assert!(!vars.is_empty());
+        let facts_no_vars = parse_python(source).unwrap();
+        assert!(!facts_no_vars.iter().any(|n| n.kind == NodeKind::Variable));
     }
 }

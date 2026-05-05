@@ -72,8 +72,8 @@ impl ParserManager {
         match lang {
             Language::Python => crate::lang::python::parse_python(source),
             Language::CppTreeSitter => crate::cpp_tree_sitter::parse_cpp_file(source),
-            Language::Go => crate::lang::go::parse_go_file(source),
-            Language::Ruby => crate::lang::ruby::parse_ruby_file(source),
+            Language::Go => crate::lang::go::parse_go(source),
+            Language::Ruby => crate::lang::ruby::parse_ruby(source),
 
             Language::JavaScript | Language::Rust | Language::Unknown => {
                 Ok(crate::heuristic_parser::parse_universal(source, ""))

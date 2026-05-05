@@ -1,14 +1,16 @@
 //! Ruby language parser using tree-sitter-ruby.
 //!
-//! Extracts method definitions, class/module definitions, and call
-//! expressions from Ruby source files.
-
-use icb_common::{IcbError, Language, NodeKind};
-use tree_sitter::{Node, Parser};
+//! Extracts method definitions, singleton methods, class/module definitions,
+//! call expressions, lambdas, and blocks as anonymous functions.
 
 use crate::facts::RawNode;
+use icb_common::{IcbError, Language, NodeKind};
+use tree_sitter::Parser;
 
-pub fn parse_ruby_file(source: &str) -> Result<Vec<RawNode>, IcbError> {
+use super::common::{child_of_kind, traverse_node};
+
+/// Parse Ruby source code and return the extracted facts.
+pub fn parse_ruby(source: &str) -> Result<Vec<RawNode>, IcbError> {
     let mut parser = Parser::new();
     parser
         .set_language(&tree_sitter_ruby::language())
@@ -16,108 +18,98 @@ pub fn parse_ruby_file(source: &str) -> Result<Vec<RawNode>, IcbError> {
 
     let tree = parser
         .parse(source, None)
-        .ok_or_else(|| IcbError::Parse("tree-sitter parse returned None".into()))?;
+        .ok_or_else(|| IcbError::Parse("tree-sitter parse returned None for Ruby source".into()))?;
 
     let mut facts = Vec::new();
-    traverse_node(tree.root_node(), source, &mut facts, None);
-    Ok(facts)
-}
 
-fn traverse_node(
-    node: Node,
-    source: &str,
-    facts: &mut Vec<RawNode>,
-    parent_idx: Option<usize>,
-) -> Option<usize> {
-    let kind = node.kind();
-
-    let (node_kind, name, is_container) = match kind {
-        "method" | "singleton_method" => {
-            let name = child_of_kind(node, "identifier")
-                .map(|n| {
-                    n.utf8_text(source.as_bytes())
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .unwrap_or_default();
-            (NodeKind::Function, Some(name), true)
-        }
-        "class" | "module" => {
-            let name = child_of_kind(node, "constant")
-                .map(|n| {
-                    n.utf8_text(source.as_bytes())
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .unwrap_or_default();
-            (NodeKind::Class, Some(name), true)
-        }
-        "call" => {
-            let name_node = child_of_kind(node, "identifier")
-                .or_else(|| child_of_kind(node, "constant"))
-                .or_else(|| child_of_kind(node, "method_identifier"));
-            let name = name_node
-                .map(|n| {
-                    n.utf8_text(source.as_bytes())
-                        .unwrap_or_default()
-                        .to_string()
-                })
-                .unwrap_or_default();
-            (NodeKind::CallSite, Some(name), false)
-        }
-        _ => {
-            let mut current_parent = parent_idx;
-            for child in node.children(&mut node.walk()) {
-                current_parent = traverse_node(child, source, facts, current_parent);
+    let classifier = |node: &tree_sitter::Node,
+                      source: &str|
+     -> Option<(NodeKind, Option<String>, bool)> {
+        match node.kind() {
+            "method" | "singleton_method" => {
+                let name = child_of_kind(*node, "identifier")
+                    .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                    .map(|s| s.to_string());
+                Some((NodeKind::Function, name, true))
             }
-            return current_parent;
+            "class" | "module" => {
+                let name = child_of_kind(*node, "constant")
+                    .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                    .map(|s| s.to_string());
+                Some((NodeKind::Class, name, true))
+            }
+            "call" => {
+                let name_node = child_of_kind(*node, "identifier")
+                    .or_else(|| child_of_kind(*node, "constant"))
+                    .or_else(|| child_of_kind(*node, "method_identifier"));
+                let name = name_node
+                    .and_then(|n| n.utf8_text(source.as_bytes()).ok())
+                    .map(|s| s.to_string());
+                Some((NodeKind::CallSite, name, false))
+            }
+            "lambda" => Some((NodeKind::Function, Some("lambda".into()), true)),
+            "do_block" | "brace_block" => Some((NodeKind::Function, Some("block".into()), true)),
+            _ => None,
         }
     };
 
-    let idx = create_node(facts, node_kind, name, &node, parent_idx);
-    if is_container {
-        let new_parent = Some(idx);
-        let mut current_parent = new_parent;
-        for child in node.children(&mut node.walk()) {
-            current_parent = traverse_node(child, source, facts, current_parent);
-        }
-        new_parent
-    } else {
-        parent_idx
-    }
+    traverse_node(
+        tree.root_node(),
+        source,
+        &mut facts,
+        None,
+        Language::Ruby,
+        &classifier,
+    );
+    Ok(facts)
 }
 
-fn create_node(
-    facts: &mut Vec<RawNode>,
-    kind: NodeKind,
-    name: Option<String>,
-    node: &Node,
-    parent_idx: Option<usize>,
-) -> usize {
-    let start = node.start_position();
-    let end = node.end_position();
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use icb_common::NodeKind;
 
-    let idx = facts.len();
-    facts.push(RawNode {
-        language: Language::Ruby,
-        kind,
-        name,
-        usr: None,
-        start_line: start.row + 1,
-        start_col: start.column,
-        end_line: end.row + 1,
-        end_col: end.column,
-        children: Vec::new(),
-        source_file: None,
-    });
-    if let Some(pidx) = parent_idx {
-        facts[pidx].children.push(idx);
+    #[test]
+    fn test_simple_method() {
+        let code = "def foo; end";
+        let facts = parse_ruby(code).unwrap();
+        let funcs: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::Function)
+            .collect();
+        assert_eq!(funcs.len(), 1);
+        assert_eq!(funcs[0].name.as_deref(), Some("foo"));
     }
-    idx
-}
 
-fn child_of_kind<'a>(node: Node<'a>, kind: &str) -> Option<Node<'a>> {
-    let mut cursor = node.walk();
-    let children: Vec<Node> = node.children(&mut cursor).collect();
-    children.into_iter().find(|child| child.kind() == kind)
+    #[test]
+    fn test_class() {
+        let code = "class MyClass; end";
+        let facts = parse_ruby(code).unwrap();
+        let classes: Vec<_> = facts.iter().filter(|n| n.kind == NodeKind::Class).collect();
+        assert_eq!(classes.len(), 1);
+        assert_eq!(classes[0].name.as_deref(), Some("MyClass"));
+    }
+
+    #[test]
+    fn test_call() {
+        let code = "puts 'hello'";
+        let facts = parse_ruby(code).unwrap();
+        let calls: Vec<_> = facts
+            .iter()
+            .filter(|n| n.kind == NodeKind::CallSite)
+            .collect();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name.as_deref(), Some("puts"));
+    }
+
+    #[test]
+    fn test_lambda() {
+        let code = "-> { }";
+        let facts = parse_ruby(code).unwrap();
+        let lambdas: Vec<_> = facts
+            .iter()
+            .filter(|n| n.name.as_deref() == Some("lambda"))
+            .collect();
+        assert_eq!(lambdas.len(), 1);
+    }
 }
