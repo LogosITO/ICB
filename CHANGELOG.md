@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.3](https://github.com/LogosITO/ICB/compare/v0.5.2...v0.5.3) (2026-05-05)
+
+
+### Bug Fixes
+
+* return complexity analysis, add LOC column, fix Clang body location ([1d311e6](https://github.com/LogosITO/ICB/commit/1d311e6577535c40ee87338182fcb05d126e195e))
+
 ## [0.5.2](https://github.com/LogosITO/ICB/compare/v0.5.1...v0.5.2) (2026-05-05)
 
 
