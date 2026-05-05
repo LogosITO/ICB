@@ -42,6 +42,7 @@ jobs:
 
           cp docs/index.html public/
           cp docs/benchmarks.html public/
+          cp docs/guide.html public/
 
           if [ -d docs/bench-data ]; then
             mkdir -p public/bench-data
