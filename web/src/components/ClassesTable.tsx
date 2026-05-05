@@ -15,7 +15,7 @@ export default function ClassesTable({ onSelect }: Props) {
             <table>
                 <thead>
                 <tr>
-                    <th>Name</th>
+                    <th>Name</th>   
                     <th>Line</th>
                     <th>Methods</th>
                     <th>Complexity</th>

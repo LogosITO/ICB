@@ -17,17 +17,8 @@
 //! | GET | `/api/classes` | All class metrics |
 //! | GET | `/api/files` | Per‑file aggregate metrics |
 //! | GET | `/api/diff` | Compare two projects or cached graphs |
-//!
-//! # Diff endpoint
-//!
-//! The `/api/diff` endpoint accepts two mandatory query parameters, `old`
-//! and `new`, which can be:
-//!
-//! * A path to a project directory or a single source file.
-//! * A path to a previously cached `.icb` graph file.
-//!
-//! It returns a [`diff::DiffReport`] containing every node and edge
-//! present in either graph, tagged as `Added`, `Removed`, or `Unchanged`.
+//! | POST | `/api/load` | Load a new project, auto‑detecting its language |
+//! | POST | `/api/upload` | Upload a ZIP archive and analyse it |
 //!
 //! # Security
 //!
@@ -59,6 +50,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/classes", web::get().to(get_classes))
             .route("/files", web::get().to(get_files))
             .route("/diff", web::get().to(get_diff))
+            .route("/load", web::post().to(post_load))
             .route("/upload", web::post().to(upload::handle_upload)),
     );
 }
@@ -81,18 +73,14 @@ struct DiffQuery {
     language: Option<String>,
 }
 
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct LoadRequest {
+    project: String,
+    languages: Option<Vec<String>>,
+}
+
 /// Return a subgraph of the main CPG, filtered by the given parameters.
-///
-/// # Query parameters
-///
-/// * `kind` – node kind to include (`Function`, `Class`, etc.).
-/// * `max_nodes` – maximum number of nodes in the response (default 200).
-/// * `focus` – name of a function/class to start a focal expansion.
-/// * `depth` – expansion depth when `focus` is used (default 1).
-/// * `show_cycles` – annotate nodes that are part of a call cycle.
-/// * `show_dead` – annotate nodes that are unreachable from the given
-///   `entries` (default `"main"`).
-/// * `entries` – comma‑separated list of entry point names.
 async fn get_graph(
     data: web::Data<Mutex<CodePropertyGraph>>,
     query: web::Query<GraphQuery>,
@@ -189,10 +177,6 @@ async fn get_graph(
 }
 
 /// Return detailed information about a single function.
-///
-/// # Query parameters
-///
-/// * `name` – function name (required).
 async fn get_node_detail(
     data: web::Data<Mutex<CodePropertyGraph>>,
     query: web::Query<HashMap<String, String>>,
@@ -241,22 +225,21 @@ async fn get_node_detail(
     HttpResponse::Ok().json(&detail)
 }
 
-/// Return all function metrics (complexity, callers/callees, cycles, dead
-/// code).
+/// Return all function metrics.
 async fn get_functions(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
     let graph = data.lock().unwrap();
     let functions = analytics::collect_function_metrics(&graph);
     HttpResponse::Ok().json(&functions)
 }
 
-/// Return all class metrics (methods, complexity).
+/// Return all class metrics.
 async fn get_classes(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
     let graph = data.lock().unwrap();
     let classes = analytics::collect_class_metrics(&graph);
     HttpResponse::Ok().json(&classes)
 }
 
-/// Return per‑file aggregate metrics (number of functions, classes, calls).
+/// Return per‑file aggregate metrics.
 async fn get_files(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
     let graph = data.lock().unwrap();
     let files = analytics::collect_file_metrics(&graph);
@@ -264,28 +247,44 @@ async fn get_files(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
 }
 
 /// Compare two projects or cached graphs and return a diff report.
-///
-/// # Query parameters
-///
-/// * `old` – path to the old project directory, source file, or `.icb`
-///   cache file (required).
-/// * `new` – path to the new project directory, source file, or `.icb`
-///   cache file (required).
-/// * `language` – programming language (default `"cpp"`).
-/// * `no_system_headers` – exclude system header nodes (default `true`).
-///
-/// The response is a JSON object with `nodes` and `edges` arrays, each
-/// element tagged with a `status` field (`"Added"`, `"Removed"`, or
-/// `"Unchanged"`).
 async fn get_diff(query: web::Query<DiffQuery>) -> HttpResponse {
     let lang = query.language.clone().unwrap_or_else(|| "cpp".into());
 
-    let old_graph = graph_builder::build_or_load_graph(Path::new(&query.old), &lang, None);
-    let new_graph = graph_builder::build_or_load_graph(Path::new(&query.new), &lang, None);
+    let old_graph = graph_builder::build_or_load_graph(
+        Path::new(&query.old),
+        &lang,
+        None,
+        true, // no system headers for diff
+    );
+    let new_graph = graph_builder::build_or_load_graph(Path::new(&query.new), &lang, None, true);
 
     match (old_graph, new_graph) {
         (Ok(old), Ok(new)) => HttpResponse::Ok().json(diff::diff_graphs(&old, &new)),
         (Err(e), _) | (_, Err(e)) => HttpResponse::BadRequest().body(e.to_string()),
+    }
+}
+
+/// Load a new project, auto‑detecting its language.
+async fn post_load(
+    data: web::Data<Mutex<CodePropertyGraph>>,
+    body: web::Json<LoadRequest>,
+) -> HttpResponse {
+    let languages = body.languages.clone().unwrap_or_default();
+    match graph_builder::build_or_load_graph_multi(Path::new(&body.project), &languages, None, true)
+    {
+        Ok(new_graph) => {
+            let nodes = new_graph.graph.node_count();
+            let edges = new_graph.graph.edge_count();
+            if let Ok(mut locked) = data.lock() {
+                *locked = new_graph;
+            }
+            HttpResponse::Ok().json(serde_json::json!({
+                "status": "ok",
+                "nodes": nodes,
+                "edges": edges,
+            }))
+        }
+        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
 
@@ -434,42 +433,6 @@ fn subgraph_by_kind(cpg: &CodePropertyGraph, kind: Option<&str>, max_nodes: usiz
     GraphData {
         nodes: selected_nodes,
         edges: selected_edges,
-    }
-}
-
-#[derive(Deserialize)]
-#[allow(dead_code)]
-struct LoadRequest {
-    project: String,
-    languages: Option<Vec<String>>,
-}
-/// Load a new project, auto‑detecting its language.
-///
-/// Expects a JSON body with:
-/// - `project`: path to the project directory or file (required).
-///
-/// On success returns `{"status": "ok", "nodes": N, "edges": M}`.
-/// On failure returns 400 with an error message.
-#[allow(dead_code)]
-async fn post_load(
-    data: web::Data<Mutex<CodePropertyGraph>>,
-    body: web::Json<LoadRequest>,
-) -> HttpResponse {
-    let languages = body.languages.clone().unwrap_or_default();
-    match graph_builder::build_or_load_graph_multi(Path::new(&body.project), &languages, None) {
-        Ok(new_graph) => {
-            let nodes = new_graph.graph.node_count();
-            let edges = new_graph.graph.edge_count();
-            if let Ok(mut locked) = data.lock() {
-                *locked = new_graph;
-            }
-            HttpResponse::Ok().json(serde_json::json!({
-                "status": "ok",
-                "nodes": nodes,
-                "edges": edges,
-            }))
-        }
-        Err(e) => HttpResponse::BadRequest().body(e.to_string()),
     }
 }
 

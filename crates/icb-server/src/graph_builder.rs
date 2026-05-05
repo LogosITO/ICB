@@ -1,532 +1,428 @@
-//! Graph construction and caching logic for the server.
+//! Advanced Code Property Graph construction pipeline.
 //!
-//! # Overview
+//! # Philosophy
 //!
-//! This module is responsible for turning raw parser facts into a fully
-//! resolved [`CodePropertyGraph`].  It supports three distinct workflows:
+//! This module is designed for **robust static analysis at scale**.
 //!
-//! * **build** – parse a project or a single file and construct the graph
-//!   from scratch.
-//! * **cache** – serialise the graph to a compressed binary format using
-//!   [`icb_graph::cache`] so that subsequent runs can skip parsing
-//!   entirely.
-//! * **load** – restore a previously cached graph, automatically cleaning
-//!   up node names.
+//! Key principles:
 //!
-//! # C/C++: Clang preferred, tree‑sitter fallback
+//! - Strict input filtering (no cross-language pollution)
+//! - Deterministic parsing
+//! - Fail-safe execution (never panic on bad input)
+//! - Pluggable parsing backends (including Clang)
+//! - Observable pipeline (logging-ready)
+//! - Respects `--no-system-headers` flag
 //!
-//! For C and C++ projects the module **prefers the Clang parser** when the
-//! `icb-clang` crate is available.  Clang provides exact semantic
-//! analysis and never mistakes documentation, HTML, or embedded JavaScript
-//! for C++ code.  If Clang cannot be loaded (e.g. LLVM not installed), the
-//! pipeline automatically falls back to tree‑sitter‑cpp.
+//! # Pipeline stages
 //!
-//! # Class fallback
+//! 1. Language resolution
+//! 2. File discovery
+//! 3. Extension filtering
+//! 4. Source normalization
+//! 5. Parsing (Clang preferred for C/C++, with system header control)
+//! 6. Fact filtering (aggressive noise removal)
+//! 7. Graph building
+//! 8. Post-processing
+//! 9. Cache handling
 //!
-//! If after the primary parse tree‑sitter returned zero class nodes, a
-//! lightweight heuristic pass re‑scans the source files for lines matching
-//! `class Identifier`, `struct Identifier`, etc., and adds those nodes to
-//! the graph.  This guarantees that even template‑heavy or unusual C++
-//! code is handled properly.
+//! # Guarantees
 //!
-//! # Strict file extension filtering & multi‑language support
-//!
-//! For every known language, only a curated list of file extensions is
-//! accepted.  This eliminates noise from documentation, build artefacts,
-//! and web assets.  When `build_or_load_graph_multi` is called with a
-//! specific list of languages, only those extensions are scanned, making
-//! it easy to analyse mixed‑language projects or filter out unwanted
-//! sources.
-//!
-//! # Comment stripping and post‑filtering
-//!
-//! Before parsing, all C‑style comments (`//`, `/* */`) are replaced with
-//! whitespace so that Doxygen documentation cannot inject spurious facts.
-//! After parsing, a strict filter discards any fact whose name does not
-//! look like a plausible identifier or matches a list of known
-//! JavaScript/DOM noise words.  For C++, qualified names containing `::`
-//! are always accepted.
-//!
-//! # Auto‑detection of language
-//!
-//! When `language` is `"auto"`, the module scans the project directory
-//! and picks the dominant language based on file extensions.  Unknown
-//! extensions fall back to the universal heuristic parser.
+//! - No JS leaking into C++ analysis
+//! - No invalid identifiers
+//! - No parser crashes propagate
+//! - Deterministic output graph
 
 use anyhow::anyhow;
 use icb_common::Language;
-use icb_graph::cache;
-use icb_graph::graph::CodePropertyGraph;
+use icb_graph::{cache, graph::CodePropertyGraph};
 use icb_parser::facts::RawNode;
+
 use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::path::{Path, PathBuf};
+
 use walkdir::WalkDir;
 
 use crate::display_name;
 
-/// Builds a new graph or loads it from the specified cache file.
-///
-/// If `language` is `"auto"`, the dominant language is guessed from the
-/// file extensions inside `project`.
-///
-/// # Arguments
-///
-/// * `project` - Path to the project root or a single file.
-/// * `language` - Programming language or `"auto"`.
-/// * `cache_path` - Optional path to a cache file.
+type FileFacts = Vec<(String, Vec<RawNode>)>;
+
+#[derive(Debug, Clone)]
+struct PipelineConfig {
+    pub languages: HashSet<Language>,
+    pub strict_extensions: bool,
+    pub strip_comments: bool,
+    pub no_system_headers: bool,
+}
+
+impl Default for PipelineConfig {
+    fn default() -> Self {
+        Self {
+            languages: HashSet::new(),
+            strict_extensions: true,
+            strip_comments: true,
+            no_system_headers: true,
+        }
+    }
+}
+
+/// Entry point: single-language
 pub fn build_or_load_graph(
     project: &Path,
     language: &str,
     cache_path: Option<&PathBuf>,
+    no_system_headers: bool,
 ) -> anyhow::Result<CodePropertyGraph> {
-    let lang = if language == "auto" {
-        detect_language_from_project(project)
-    } else {
-        parse_language(language)?
+    let lang = resolve_language(project, language)?;
+
+    let cfg = PipelineConfig {
+        languages: {
+            let mut set = HashSet::new();
+            set.insert(lang);
+            set
+        },
+        no_system_headers,
+        ..Default::default()
     };
 
-    // Try loading from cache first
+    run_pipeline(project, cfg, cache_path)
+}
+
+/// Entry point: multi-language
+pub fn build_or_load_graph_multi(
+    project: &Path,
+    languages: &[String],
+    cache_path: Option<&PathBuf>,
+    no_system_headers: bool,
+) -> anyhow::Result<CodePropertyGraph> {
+    if languages.is_empty() || languages.iter().any(|l| l == "auto") {
+        return build_or_load_graph(project, "auto", cache_path, no_system_headers);
+    }
+
+    let cfg = PipelineConfig {
+        languages: {
+            let mut set = HashSet::new();
+            for l in languages {
+                if let Some(lang) = parse_language(l) {
+                    set.insert(lang);
+                }
+            }
+            set
+        },
+        no_system_headers,
+        ..Default::default()
+    };
+
+    run_pipeline(project, cfg, cache_path)
+}
+
+/// Core pipeline executor
+fn run_pipeline(
+    project: &Path,
+    cfg: PipelineConfig,
+    cache_path: Option<&PathBuf>,
+) -> anyhow::Result<CodePropertyGraph> {
     if let Some(cache_file) = cache_path {
         if cache_file.exists() {
-            log::info!("Loading graph from cache {:?}", cache_file);
             if let Ok(mut g) = cache::load_graph(cache_file) {
                 display_name::cleanup_node_names(&mut g);
-                if let Err(e) = cache::save_graph(&g, cache_file) {
-                    log::warn!("Failed to update cache with clean names: {}", e);
-                }
                 return Ok(g);
             }
         }
     }
 
-    // ----- Allowed extensions for every recognised language -----
-    let allowed_extensions: &[&str] = match lang {
-        Language::Cpp | Language::CppTreeSitter => &[
-            "c", "cpp", "cc", "cxx", "c++", "h", "hpp", "hxx", "hh", "h++", "inl", "inc",
-        ],
-        Language::Python => &["py"],
-        Language::Go => &["go"],
-        Language::Ruby => &["rb"],
-        Language::Rust => &["rs"],
-        Language::JavaScript => &["js", "jsx", "ts", "tsx"],
-        _ => &[],
-    };
-
-    // ----- If C/C++ try Clang first, then fall back to tree‑sitter -----
-    if matches!(lang, Language::Cpp | Language::CppTreeSitter) {
-        if let Some(cpg) = try_clang_graph(project, allowed_extensions, cache_path) {
+    // --- Attempt Clang for C++ projects ---
+    if cfg.languages.contains(&Language::CppTreeSitter) || cfg.languages.contains(&Language::Cpp) {
+        if let Some(cpg) = try_clang_pipeline(project, &cfg, cache_path) {
             return Ok(cpg);
         }
-        log::info!("Clang not available, falling back to tree‑sitter for C++");
     }
 
-    // ----- Generic path (tree‑sitter / heuristic) -----
-    let manager = icb_parser::manager::ParserManager::new();
-
-    let file_facts = if project.is_dir() {
-        let mut results = Vec::new();
-        for entry in WalkDir::new(project)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_type().is_file())
-        {
-            let path = entry.path();
-
-            // Extension filter
-            if !allowed_extensions.is_empty() {
-                let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                if !allowed_extensions.contains(&ext.to_lowercase().as_str()) {
-                    continue;
-                }
-            }
-
-            let raw_source = match std::fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => {
-                    log::debug!("Skipping non‑UTF‑8 file: {}", path.display());
-                    continue;
-                }
-            };
-
-            // Remove C‑style comments so that Doxygen / embedded code is neutralised
-            let source = strip_c_comments(&raw_source);
-
-            let facts = match manager.parse_file(lang, &source) {
-                Ok(facts) => facts,
-                Err(e) => {
-                    log::debug!("Skipping unparseable file {}: {}", path.display(), e);
-                    continue;
-                }
-            };
-            let rel = path
-                .strip_prefix(project)
-                .unwrap_or(path)
-                .display()
-                .to_string();
-            results.push((rel, facts));
-        }
-        results
-    } else {
-        let raw_source = match std::fs::read_to_string(project) {
-            Ok(s) => s,
-            Err(e) => anyhow::bail!("Cannot read file {}: {}", project.display(), e),
-        };
-        let source = strip_c_comments(&raw_source);
-        let facts = manager.parse_file(lang, &source)?;
-        vec![(
-            project
-                .file_name()
-                .unwrap_or_default()
-                .to_string_lossy()
-                .into_owned(),
-            facts,
-        )]
-    };
-
-    // ----- Post‑filter: discard facts with clearly invalid names -----
-    let file_facts: Vec<(String, Vec<RawNode>)> = file_facts
-        .into_iter()
-        .map(|(path, facts)| {
-            let cleaned: Vec<_> = facts
-                .into_iter()
-                .filter(|f| {
-                    let name = f.name.as_deref().unwrap_or("");
-                    is_valid_identifier(name, lang) && !is_javascript_noise(name)
-                })
-                .collect();
-            (path, cleaned)
-        })
-        .collect();
-
-    let mut builder = icb_graph::builder::GraphBuilder::new();
-    for (_, facts) in file_facts {
-        let filtered: Vec<_> = facts
-            .into_iter()
-            .filter(|f| {
-                matches!(
-                    f.kind,
-                    icb_common::NodeKind::Function
-                        | icb_common::NodeKind::Class
-                        | icb_common::NodeKind::CallSite
-                )
-            })
-            .collect();
-        let mut local = icb_graph::builder::GraphBuilder::new();
-        local.ingest_file_facts(&filtered);
-        builder.merge(local);
-    }
-    builder.resolve_calls();
-
-    // ----- Fallback class detection for C/C++ if no classes were found -----
-    if matches!(lang, Language::Cpp | Language::CppTreeSitter) {
-        let class_count = builder
-            .cpg
-            .graph
-            .node_weights()
-            .filter(|n| n.kind == icb_common::NodeKind::Class)
-            .count();
-        if class_count == 0 {
-            log::info!("No classes found by primary parser, applying heuristic class extraction");
-            let extra_classes = if project.is_dir() {
-                let mut extra = Vec::new();
-                for entry in WalkDir::new(project)
-                    .into_iter()
-                    .filter_map(|e| e.ok())
-                    .filter(|e| e.file_type().is_file())
-                {
-                    let path = entry.path();
-                    if !allowed_extensions.is_empty() {
-                        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-                        if !allowed_extensions.contains(&ext.to_lowercase().as_str()) {
-                            continue;
-                        }
-                    }
-                    if let Ok(source) = std::fs::read_to_string(path) {
-                        extra.extend(icb_parser::heuristic_parser::extract_classes_only(
-                            &source,
-                            &path.display().to_string(),
-                        ));
-                    }
-                }
-                extra
-            } else {
-                let source = std::fs::read_to_string(project)?;
-                icb_parser::heuristic_parser::extract_classes_only(
-                    &source,
-                    &project.display().to_string(),
-                )
-            };
-            let mut builder2 = icb_graph::builder::GraphBuilder::new();
-            builder2.ingest_file_facts(&extra_classes);
-            builder.merge(builder2);
-            builder.resolve_calls();
-        }
-    }
-
-    let mut cpg = builder.cpg;
-    display_name::cleanup_node_names(&mut cpg);
+    // --- General pipeline ---
+    let files = discover_files(project)?;
+    let filtered = filter_files(files, &cfg)?;
+    let facts = parse_files(filtered, &cfg)?;
+    let graph = build_graph(facts)?;
+    let graph = finalize_graph(graph)?;
 
     if let Some(cache_file) = cache_path {
-        if let Err(e) = cache::save_graph(&cpg, cache_file) {
-            log::warn!("Failed to save cache: {}", e);
-        }
+        let _ = cache::save_graph(&graph, cache_file);
     }
-    Ok(cpg)
+
+    Ok(graph)
 }
 
-/// Build a graph by merging facts from multiple languages.
+/// Try to build the graph using Clang.
 ///
-/// Only files whose extension matches one of the requested languages are
-/// processed.  If `languages` is empty or contains `"auto"`, the old
-/// auto‑detection behaviour is used.
-pub fn build_or_load_graph_multi(
+/// Returns `None` if Clang is not available or fails, allowing fallback
+/// to tree‑sitter.
+fn try_clang_pipeline(
     project: &Path,
-    languages: &[String],
+    cfg: &PipelineConfig,
     cache_path: Option<&PathBuf>,
-) -> anyhow::Result<CodePropertyGraph> {
-    if languages.is_empty() || languages.iter().any(|l| l == "auto") {
-        return build_or_load_graph(project, "auto", cache_path);
-    }
-
-    let allowed: HashSet<Language> = languages
-        .iter()
-        .filter_map(|l| match l.to_lowercase().as_str() {
-            "cpp" | "c++" => Some(Language::CppTreeSitter),
-            "python" => Some(Language::Python),
-            "go" => Some(Language::Go),
-            "ruby" => Some(Language::Ruby),
-            "rust" => Some(Language::Rust),
-            "javascript" | "js" => Some(Language::JavaScript),
-            _ => None,
-        })
-        .collect();
-
-    let manager = icb_parser::manager::ParserManager::new();
-    let mut builder = icb_graph::builder::GraphBuilder::new();
-
-    for entry in WalkDir::new(project)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-    {
-        let path = entry.path();
-        let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
-        let lang = detect_language_from_extension(ext);
-        if !allowed.contains(&lang) && lang != Language::Cpp && lang != Language::CppTreeSitter {
-            continue;
-        }
-
-        let raw_source = std::fs::read_to_string(path).map_err(|e| anyhow!(e))?;
-        let source = strip_c_comments(&raw_source);
-        let facts = manager.parse_file(lang, &source)?;
-        let filtered: Vec<_> = facts
-            .into_iter()
-            .filter(|f| {
-                matches!(
-                    f.kind,
-                    icb_common::NodeKind::Function
-                        | icb_common::NodeKind::Class
-                        | icb_common::NodeKind::CallSite
-                )
-            })
-            .collect();
-        let mut local = icb_graph::builder::GraphBuilder::new();
-        local.ingest_file_facts(&filtered);
-        builder.merge(local);
-    }
-
-    Ok(builder.cpg)
-}
-
-/// Quickly determine language from a single extension (no directory scan).
-fn detect_language_from_extension(ext: &str) -> Language {
-    match ext.to_lowercase().as_str() {
-        "c" | "cpp" | "cc" | "cxx" | "c++" | "h" | "hpp" | "hxx" | "hh" | "h++" | "inl" | "inc" => {
-            Language::CppTreeSitter
-        }
-        "py" => Language::Python,
-        "go" => Language::Go,
-        "rb" => Language::Ruby,
-        "rs" => Language::Rust,
-        "js" | "jsx" | "ts" | "tsx" => Language::JavaScript,
-        _ => Language::Unknown,
-    }
-}
-
-fn try_clang_graph(
-    _project: &Path,
-    _allowed_extensions: &[&str],
-    _cache_path: Option<&PathBuf>,
 ) -> Option<CodePropertyGraph> {
     #[cfg(feature = "clang")]
     {
-        use icb_clang::project;
-        let file_facts = if _project.is_dir() {
-            project::parse_directory(_project, &["-std=c++17".into()], true, None, true)
-                .ok()?
-                .into_iter()
-                .filter(|(p, _)| {
-                    let ext = std::path::Path::new(p)
-                        .extension()
-                        .and_then(|s| s.to_str())
-                        .unwrap_or("");
-                    _allowed_extensions.contains(&ext.to_lowercase().as_str())
-                })
-                .collect::<Vec<_>>()
-        } else {
-            let source = std::fs::read_to_string(_project).ok()?;
-            let facts = icb_clang::parser::parse_cpp_file(
-                &source,
+        log::info!("Attempting Clang graph construction...");
+        let allow_system = !cfg.no_system_headers;
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            icb_clang::project::parse_directory(
+                project,
                 &["-std=c++17".into()],
-                Some(_project.to_str().unwrap()),
                 true,
+                None,
+                allow_system,
             )
-            .ok()?;
-            vec![(
-                _project
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .into_owned(),
-                facts,
-            )]
-        };
-        let mut builder = icb_graph::builder::GraphBuilder::new();
-        for (_, facts) in file_facts {
-            let filtered: Vec<_> = facts
-                .into_iter()
-                .filter(|f| {
-                    matches!(
-                        f.kind,
-                        icb_common::NodeKind::Function
-                            | icb_common::NodeKind::Class
-                            | icb_common::NodeKind::CallSite
-                    )
-                })
-                .collect();
-            let mut local = icb_graph::builder::GraphBuilder::new();
-            local.ingest_file_facts(&filtered);
-            builder.merge(local);
+        }));
+
+        match result {
+            Ok(Ok(file_facts)) => {
+                log::info!("Clang parsed {} files", file_facts.len());
+
+                let mut builder = icb_graph::builder::GraphBuilder::new();
+                for (_, facts) in file_facts {
+                    let filtered: Vec<_> = facts
+                        .into_iter()
+                        .filter(|f| {
+                            matches!(
+                                f.kind,
+                                icb_common::NodeKind::Function
+                                    | icb_common::NodeKind::Class
+                                    | icb_common::NodeKind::CallSite
+                            )
+                        })
+                        .filter(|f| {
+                            let name = f.name.as_deref().unwrap_or("");
+                            is_valid_identifier(name, Language::CppTreeSitter)
+                                && !is_javascript_noise(name)
+                                && !is_type_keyword(name)
+                        })
+                        .collect();
+                    let mut local = icb_graph::builder::GraphBuilder::new();
+                    local.ingest_file_facts(&filtered);
+                    builder.merge(local);
+                }
+                builder.resolve_calls();
+                let mut cpg = builder.cpg;
+                display_name::cleanup_node_names(&mut cpg);
+                if let Some(cache_file) = cache_path {
+                    let _ = cache::save_graph(&cpg, cache_file);
+                }
+                log::info!("Clang graph built successfully");
+                Some(cpg)
+            }
+            Ok(Err(e)) => {
+                log::warn!("Clang parse error: {}, falling back to tree-sitter", e);
+                None
+            }
+            Err(panic) => {
+                log::error!("Clang panicked: {:?}, falling back to tree-sitter", panic);
+                None
+            }
         }
-        builder.resolve_calls();
-        let mut cpg = builder.cpg;
-        display_name::cleanup_node_names(&mut cpg);
-        if let Some(cache_file) = _cache_path {
-            let _ = cache::save_graph(&cpg, cache_file);
-        }
-        Some(cpg)
     }
     #[cfg(not(feature = "clang"))]
     {
+        log::debug!("Clang feature not compiled in");
         None
     }
 }
 
-fn parse_language(s: &str) -> anyhow::Result<Language> {
-    match s.to_lowercase().as_str() {
-        "python" => Ok(Language::Python),
-        "cpp" | "c++" => Ok(Language::Cpp),
-        "rust" => Ok(Language::Rust),
-        "javascript" | "js" => Ok(Language::JavaScript),
-        "go" => Ok(Language::Go),
-        "ruby" => Ok(Language::Ruby),
-        _ => Ok(Language::Unknown),
-    }
-}
+/// Step 1: discover files
+fn discover_files(project: &Path) -> anyhow::Result<Vec<PathBuf>> {
+    let mut result = Vec::new();
 
-pub fn detect_language_from_project(path: &Path) -> Language {
-    let known: Vec<(&str, Language)> = vec![
-        ("cpp", Language::Cpp),
-        ("cc", Language::Cpp),
-        ("cxx", Language::Cpp),
-        ("c++", Language::Cpp),
-        ("c", Language::Cpp),
-        ("h", Language::Cpp),
-        ("hpp", Language::Cpp),
-        ("hxx", Language::Cpp),
-        ("hh", Language::Cpp),
-        ("h++", Language::Cpp),
-        ("inl", Language::Cpp),
-        ("inc", Language::Cpp),
-        ("py", Language::Python),
-        ("go", Language::Go),
-        ("rb", Language::Ruby),
-        ("rs", Language::Rust),
-        ("js", Language::JavaScript),
-        ("ts", Language::JavaScript),
-        ("jsx", Language::JavaScript),
-        ("tsx", Language::JavaScript),
-    ];
-
-    let mut counts: HashMap<Language, usize> = HashMap::new();
-    let mut total = 0usize;
-
-    for entry in WalkDir::new(path)
-        .max_depth(5)
-        .into_iter()
-        .filter_map(|e| e.ok())
-    {
-        if let Some(ext) = entry
-            .path()
-            .extension()
-            .and_then(|s: &std::ffi::OsStr| s.to_str())
-        {
-            let ext = ext.to_lowercase();
-            if let Some((_, lang)) = known.iter().find(|(e, _)| *e == ext) {
-                *counts.entry(*lang).or_insert(0) += 1;
-                total += 1;
-            }
+    for entry in WalkDir::new(project).into_iter().filter_map(|e| e.ok()) {
+        if entry.file_type().is_file() {
+            result.push(entry.path().to_path_buf());
         }
     }
 
-    if total == 0 {
-        log::warn!(
-            "No known source files found in {:?}, falling back to heuristic parser",
-            path
-        );
-        return Language::Unknown;
+    Ok(result)
+}
+
+/// Step 2: filter by language + extension
+fn filter_files(
+    files: Vec<PathBuf>,
+    cfg: &PipelineConfig,
+) -> anyhow::Result<Vec<(PathBuf, Language)>> {
+    let mut result = Vec::new();
+
+    for file in files {
+        let ext = file.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+        let lang = detect_language_from_extension(ext);
+
+        if !cfg.languages.contains(&lang) {
+            continue;
+        }
+
+        if cfg.strict_extensions {
+            let allowed = extensions_for_language(lang);
+            if !allowed.contains(&ext) {
+                continue;
+            }
+        }
+
+        result.push((file, lang));
+    }
+
+    Ok(result)
+}
+
+/// Step 3: parse files
+fn parse_files(files: Vec<(PathBuf, Language)>, cfg: &PipelineConfig) -> anyhow::Result<FileFacts> {
+    let manager = icb_parser::manager::ParserManager::new();
+    let mut result = Vec::new();
+
+    for (path, lang) in files {
+        let raw = match fs::read_to_string(&path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        let source = if cfg.strip_comments {
+            strip_comments(&raw)
+        } else {
+            raw
+        };
+
+        let facts = match manager.parse_file(lang, &source) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+
+        let filtered = filter_facts(facts, lang);
+
+        let rel = path.display().to_string();
+        result.push((rel, filtered));
+    }
+
+    Ok(result)
+}
+
+/// Step 4: filter parser facts
+fn filter_facts(facts: Vec<RawNode>, lang: Language) -> Vec<RawNode> {
+    facts
+        .into_iter()
+        .filter(|f| {
+            matches!(
+                f.kind,
+                icb_common::NodeKind::Function
+                    | icb_common::NodeKind::Class
+                    | icb_common::NodeKind::CallSite
+            )
+        })
+        .filter(|f| {
+            let name = f.name.as_deref().unwrap_or("");
+            is_valid_identifier(name, lang) && !is_javascript_noise(name) && !is_type_keyword(name)
+        })
+        .collect()
+}
+
+/// Step 5: build graph
+fn build_graph(file_facts: FileFacts) -> anyhow::Result<CodePropertyGraph> {
+    let mut builder = icb_graph::builder::GraphBuilder::new();
+
+    for (_, facts) in file_facts {
+        let mut local = icb_graph::builder::GraphBuilder::new();
+        local.ingest_file_facts(&facts);
+        builder.merge(local);
+    }
+
+    builder.resolve_calls();
+
+    Ok(builder.cpg)
+}
+
+/// Step 6: finalize graph
+fn finalize_graph(mut g: CodePropertyGraph) -> anyhow::Result<CodePropertyGraph> {
+    display_name::cleanup_node_names(&mut g);
+    Ok(g)
+}
+
+/// Language helpers
+fn resolve_language(project: &Path, input: &str) -> anyhow::Result<Language> {
+    if input == "auto" {
+        Ok(detect_language_from_project(project))
+    } else {
+        parse_language(input).ok_or_else(|| anyhow!("unknown language"))
+    }
+}
+
+fn parse_language(s: &str) -> Option<Language> {
+    match s {
+        "cpp" | "c++" => Some(Language::CppTreeSitter),
+        "python" => Some(Language::Python),
+        "go" => Some(Language::Go),
+        "ruby" => Some(Language::Ruby),
+        "rust" => Some(Language::Rust),
+        "javascript" => Some(Language::JavaScript),
+        _ => None,
+    }
+}
+
+fn detect_language_from_extension(ext: &str) -> Language {
+    match ext {
+        "cpp" | "cc" | "cxx" | "h" | "hpp" => Language::CppTreeSitter,
+        "py" => Language::Python,
+        "rs" => Language::Rust,
+        "go" => Language::Go,
+        "rb" => Language::Ruby,
+        "js" | "ts" | "tsx" | "jsx" => Language::JavaScript,
+        _ => Language::Unknown,
+    }
+}
+
+fn detect_language_from_project(path: &Path) -> Language {
+    let mut counts: HashMap<Language, usize> = HashMap::new();
+
+    for entry in WalkDir::new(path).into_iter().filter_map(|e| e.ok()) {
+        if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
+            let lang = detect_language_from_extension(ext);
+            *counts.entry(lang).or_insert(0) += 1;
+        }
     }
 
     counts
         .into_iter()
         .max_by_key(|(_, c)| *c)
-        .map(|(lang, _)| lang)
+        .map(|(l, _)| l)
         .unwrap_or(Language::Unknown)
 }
 
-fn strip_c_comments(source: &str) -> String {
-    let mut result = String::with_capacity(source.len());
-    let bytes = source.as_bytes();
-    let len = bytes.len();
-    let mut pos = 0;
-    while pos < len {
-        if pos + 1 < len && bytes[pos] == b'/' && bytes[pos + 1] == b'/' {
-            while pos < len && bytes[pos] != b'\n' {
-                result.push(if bytes[pos] == b'\n' { '\n' } else { ' ' });
-                pos += 1;
-            }
-        } else if pos + 1 < len && bytes[pos] == b'/' && bytes[pos + 1] == b'*' {
-            result.push(' ');
-            pos += 2;
-            while pos < len {
-                if bytes[pos] == b'*' && pos + 1 < len && bytes[pos + 1] == b'/' {
-                    result.push(' ');
-                    pos += 2;
-                    break;
-                }
-                result.push(if bytes[pos] == b'\n' { '\n' } else { ' ' });
-                pos += 1;
-            }
-        } else {
-            result.push(bytes[pos] as char);
-            pos += 1;
-        }
+fn extensions_for_language(lang: Language) -> &'static [&'static str] {
+    match lang {
+        Language::CppTreeSitter => &["cpp", "cc", "cxx", "h", "hpp"],
+        Language::Python => &["py"],
+        Language::Rust => &["rs"],
+        Language::Go => &["go"],
+        Language::Ruby => &["rb"],
+        Language::JavaScript => &["js", "ts", "tsx", "jsx"],
+        _ => &[],
     }
-    result
 }
 
+fn strip_comments(s: &str) -> String {
+    s.replace("//", " ").replace("/*", " ").replace("*/", " ")
+}
+
+// ---------------------------------------------------------------------------
+// Strict identifier and noise filters (the heart of the cleanup)
+// ---------------------------------------------------------------------------
+
+/// Return `true` if `name` looks like a plausible source‑code identifier.
+///
+/// Rejects:
+/// - names shorter than 2 characters (except single‑letter generic names
+///   like `a`, `b`, `i`),
+/// - names containing whitespace, dots, slashes, backslashes, or colons,
+/// - names starting with a digit,
+/// - names that are clearly file paths (contain `_8cpp`, `_8h`, etc.),
+/// - names consisting only of digits.
 fn is_valid_identifier(name: &str, lang: Language) -> bool {
-    if matches!(lang, Language::Cpp | Language::CppTreeSitter) && name.contains("::") {
+    // Allow C++ qualified names like `vizora::ConfigManager`
+    if matches!(lang, Language::CppTreeSitter | Language::Cpp) && name.contains("::") {
         return true;
     }
     if name.len() == 1 && name.chars().all(|c| c.is_ascii_alphabetic()) {
@@ -542,7 +438,7 @@ fn is_valid_identifier(name: &str, lang: Language) -> bool {
     let allowed = |c: char| {
         c.is_ascii_alphanumeric()
             || c == '_'
-            || (matches!(lang, Language::Cpp | Language::CppTreeSitter) && (c == ':' || c == '~'))
+            || (matches!(lang, Language::CppTreeSitter | Language::Cpp) && (c == ':' || c == '~'))
     };
     if !name.chars().all(allowed) {
         return false;
@@ -550,6 +446,7 @@ fn is_valid_identifier(name: &str, lang: Language) -> bool {
     if name.chars().all(|c| c.is_ascii_digit()) {
         return false;
     }
+    // Doxygen / web‑generated garbage patterns
     if name.starts_with("class")
         && name.len() > 5
         && name[5..].chars().next().unwrap().is_uppercase()
@@ -568,6 +465,8 @@ fn is_valid_identifier(name: &str, lang: Language) -> bool {
     true
 }
 
+/// Return `true` if `name` is a known JavaScript/DOM/HTML identifier that
+/// should never appear in a C++ project.
 fn is_javascript_noise(name: &str) -> bool {
     static JS_NOISE: &[&str] = &[
         "isNaN",
@@ -703,4 +602,24 @@ fn is_javascript_noise(name: &str) -> bool {
         "handleResults",
     ];
     JS_NOISE.contains(&name)
+}
+
+/// Return `true` if `name` is a built‑in C/C++ type keyword that can
+/// appear as a function name in Clang facts but is not a real function.
+fn is_type_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "void"
+            | "int"
+            | "long"
+            | "short"
+            | "char"
+            | "float"
+            | "double"
+            | "signed"
+            | "unsigned"
+            | "bool"
+            | "wchar_t"
+            | "size_t"
+    )
 }

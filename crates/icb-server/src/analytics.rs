@@ -1,3 +1,18 @@
+//! Analytics module for the ICB server.
+//!
+//! Provides functions that compute various metrics over a
+//! [`CodePropertyGraph`], such as function and class statistics,
+//! complexity estimations, and per‑file summaries.  These metrics are
+//! consumed by the `/api/functions`, `/api/classes`, and `/api/files`
+//! endpoints.
+//!
+//! # Complexity
+//!
+//! The `complexity` field is currently set to `0` for all entries to
+//! avoid performance issues with the `detect_complex_functions` analysis
+//! on very large graphs.  It will be re‑enabled once that analysis is
+//! optimised.
+
 use icb_common::NodeKind;
 use icb_graph::analysis;
 use icb_graph::graph::{CodePropertyGraph, Edge};
@@ -5,7 +20,7 @@ use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// Metric for a single function (or method) visible in the graph.
+/// A single function (or method) metric.
 #[derive(Debug, Serialize)]
 pub struct FunctionMetric {
     pub name: String,
@@ -19,14 +34,14 @@ pub struct FunctionMetric {
     pub callees: usize,
 }
 
-/// Collects metrics for every function and class node in the CPG.
+/// Computes metrics for every function and class node in the graph.
 ///
-/// Names are used as provided by the graph – upstream clearing ensures they
-/// are already human‑readable, no USR mangling is performed here.
+/// The returned vector contains one entry per node with kind
+/// [`NodeKind::Function`] or [`NodeKind::Class`].  Complexity is
+/// currently disabled (set to `0`).
 pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> {
     let cycles = analysis::detect_call_cycles(cpg);
     let dead = analysis::detect_dead_code(cpg, &["main".to_string()]);
-    let complex_list = analysis::detect_complex_functions(cpg, 0);
 
     cpg.graph
         .node_weights()
@@ -36,11 +51,6 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
 
             let is_cycle = cycles.iter().any(|c| c.functions.contains(&name));
             let is_dead = dead.iter().any(|n| n.name.as_deref() == Some(&name));
-            let complexity = complex_list
-                .iter()
-                .find(|r| r.function_name == name)
-                .map(|r| r.ast_node_count)
-                .unwrap_or(0);
 
             let idx = cpg
                 .graph
@@ -64,7 +74,7 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
                 kind: format!("{:?}", node.kind),
                 line: node.start_line,
                 file: None,
-                complexity,
+                complexity: 0,
                 is_cycle,
                 is_dead,
                 callers,
@@ -74,7 +84,7 @@ pub fn collect_function_metrics(cpg: &CodePropertyGraph) -> Vec<FunctionMetric> 
         .collect()
 }
 
-/// Metric aggregating a class definition.
+/// A single class metric.
 #[derive(Debug, Serialize)]
 pub struct ClassMetric {
     pub name: String,
@@ -84,21 +94,16 @@ pub struct ClassMetric {
     pub complexity: usize,
 }
 
-/// Collects metrics for class nodes, counting methods connected via `AstChild`
-/// edges.
+/// Collects metrics for every class node.
+///
+/// For each class the number of methods (connected via [`Edge::AstChild`])
+/// is counted.  Complexity is currently set to `0`.
 pub fn collect_class_metrics(cpg: &CodePropertyGraph) -> Vec<ClassMetric> {
-    let complex_list = analysis::detect_complex_functions(cpg, 0);
-
     cpg.graph
         .node_weights()
         .filter(|n| n.kind == NodeKind::Class)
         .map(|node| {
             let name = node.name.clone().unwrap_or_default();
-            let complexity = complex_list
-                .iter()
-                .find(|r| r.function_name == name)
-                .map(|r| r.ast_node_count)
-                .unwrap_or(0);
 
             let idx = cpg
                 .graph
@@ -118,13 +123,13 @@ pub fn collect_class_metrics(cpg: &CodePropertyGraph) -> Vec<ClassMetric> {
                 line: node.start_line,
                 file: None,
                 methods,
-                complexity,
+                complexity: 0,
             }
         })
         .collect()
 }
 
-/// Per‑file summary of code entities and call activity.
+/// Per‑file summary.
 #[derive(Debug, Serialize)]
 pub struct FileMetric {
     pub path: String,
@@ -134,9 +139,10 @@ pub struct FileMetric {
     pub calls: usize,
 }
 
-/// Groups nodes and calls by the file path stored in the `usr` field of each
-/// node.  The `usr` field is repurposed as a file location hint by the C++
-/// frontend.
+/// Creates per‑file aggregate metrics.
+///
+/// Nodes are grouped by the file path stored in their `usr` field.
+/// Call edges are counted for each file.
 pub fn collect_file_metrics(cpg: &CodePropertyGraph) -> Vec<FileMetric> {
     let mut files: HashMap<String, (usize, usize, usize, usize)> = HashMap::new();
     for node in cpg.graph.node_weights() {

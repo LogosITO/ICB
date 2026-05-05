@@ -1,109 +1,209 @@
-//! Universal parser manager for ICB.
+//! Universal high-performance parser manager.
 //!
-//! Provides a single entry point for parsing source code in multiple
-//! languages.  The manager routes requests to the appropriate backend:
+//! # Overview
 //!
-//! * [`Language::Python`] → [`crate::lang::python::parse_python`],
-//! * [`Language::CppTreeSitter`] → [`crate::cpp_tree_sitter::parse_cpp_file`],
-//! * [`Language::Cpp`] – Clang (handled externally via `icb-clang`; the
-//!   manager returns an error if called directly, prompting the caller to
-//!   use the Clang path).
-//! * All other languages (including [`Language::Unknown`]) → universal
-//!   heuristic parser.
+//! Provides a unified, fault‑tolerant entry point for parsing source code
+//! across multiple programming languages.
 //!
-//! # Directory parsing
+//! # Design Goals
 //!
-//! When given a directory, the manager recursively discovers files with
-//! language‑specific extensions and parses each one, returning a vector
-//! of `(relative_path, Vec<RawNode>)`.
+//! * Zero‑panic parsing pipeline
+//! * Deterministic behaviour
+//! * Efficient large‑scale directory traversal
+//! * Minimal memory overhead
+//! * Extensible language backends
+//!
+//! # Features
+//!
+//! * Multi‑language dispatch
+//! * Extension‑based file filtering
+//! * Graceful failure handling (I/O errors, unsupported languages)
+//! * Relative path normalisation
+//! * Batched file processing
+//!
+//! # Execution Model
+//!
+//! 1. Discover files
+//! 2. Filter by extension
+//! 3. Read sources
+//! 4. Dispatch parser
+//! 5. Collect facts
+//!
+//! # Safety Guarantees
+//!
+//! * No `unwrap()`
+//! * No panic propagation
+//! * I/O errors isolated per file (skipped silently)
+//! * Parse errors isolated per file (skipped silently)
+//!
+//! # Output
+//!
+//! Returns a vector of `(relative_path, Vec<RawNode>)`.
 
 use crate::facts::RawNode;
 use icb_common::{IcbError, Language};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+/// Stateless parser manager.
+#[derive(Default)]
 pub struct ParserManager;
 
-impl Default for ParserManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl ParserManager {
+    /// Create a new parser manager.
     pub fn new() -> Self {
         Self
     }
 
-    /// Parse a single source file.
+    /// Parse a single source file using the most appropriate backend for the
+    /// given language.
+    ///
+    /// # Arguments
+    ///
+    /// * `lang` – the programming language of the source.
+    /// * `source` – the raw source code as a UTF‑8 string.
     ///
     /// # Errors
     ///
-    /// Returns [`IcbError::Parse`] if the language is not supported or the
-    /// source cannot be parsed.
+    /// Returns [`IcbError::Parse`] if the specialised parser fails.
+    /// Unknown / unsupported languages are handled by the universal
+    /// heuristic parser and never produce an error.
     pub fn parse_file(&self, lang: Language, source: &str) -> Result<Vec<RawNode>, IcbError> {
         match lang {
             Language::Python => crate::lang::python::parse_python(source),
             Language::CppTreeSitter => crate::cpp_tree_sitter::parse_cpp_file(source),
             Language::Go => crate::lang::go::parse_go_file(source),
             Language::Ruby => crate::lang::ruby::parse_ruby_file(source),
-            Language::Cpp => Err(IcbError::UnsupportedLanguage(
-                "Cpp backend requires the `icb-clang` crate – use `CppTreeSitter` instead or call Clang directly".into(),
-            )),
-            Language::Unknown => crate::heuristic_parser::parse_universal(source, ""),
-            _ => crate::heuristic_parser::parse_universal(source, ""),
+
+            Language::JavaScript | Language::Rust | Language::Unknown => {
+                Ok(crate::heuristic_parser::parse_universal(source, ""))
+            }
+
+            Language::Cpp => Ok(crate::heuristic_parser::parse_universal(source, "")),
+
+            _ => Ok(crate::heuristic_parser::parse_universal(source, "")),
         }
     }
 
     /// Recursively discover and parse files under `root` for the given
     /// language.
     ///
-    /// The language determines both the file extensions and the parser.
+    /// The language determines both the file extensions and the parser
+    /// backend.  Files that cannot be read as UTF‑8 or that cause a parser
+    /// error are silently skipped.
+    ///
+    /// # Arguments
+    ///
+    /// * `lang` – the programming language to use for parsing.
+    /// * `root` – the root directory to walk.
     ///
     /// # Errors
     ///
-    /// Returns [`IcbError::Io`] if directory traversal fails, or
-    /// [`IcbError::Parse`] for the first file that fails to parse.
+    /// Returns [`IcbError::Parse`] if directory traversal fails (e.g.
+    /// permission denied).  Individual file failures are not propagated.
     pub fn parse_directory(
         &self,
         lang: Language,
         root: &Path,
     ) -> Result<Vec<(String, Vec<RawNode>)>, IcbError> {
-        let extensions = extensions_for_language(lang);
-        let mut files = Vec::new();
-        for entry in WalkDir::new(root).follow_links(false) {
-            let entry = entry.map_err(|e| IcbError::Parse(e.to_string()))?;
-            if entry.file_type().is_file() {
-                if let Some(ext) = entry.path().extension().and_then(|s| s.to_str()) {
-                    if extensions.is_empty() || extensions.contains(&ext.to_lowercase().as_str()) {
-                        files.push(entry.path().to_path_buf());
-                    }
-                } else if extensions.is_empty() {
-                    files.push(entry.path().to_path_buf());
-                }
+        let files = discover_files(root, lang)?;
+        let base = normalize_root(root);
+        let mut results = Vec::with_capacity(files.len());
+
+        for path in files {
+            match process_file(self, lang, &path, &base) {
+                Ok(Some(entry)) => results.push(entry),
+                Ok(None) | Err(_) => continue,
             }
         }
 
-        let relative_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        let mut results = Vec::new();
-        for file_path in files {
-            let source = std::fs::read_to_string(&file_path).map_err(IcbError::Io)?;
-            let facts = self.parse_file(lang, &source)?;
-            let rel = file_path
-                .strip_prefix(&relative_root)
-                .unwrap_or(&file_path)
-                .display()
-                .to_string();
-            results.push((rel, facts));
-        }
         Ok(results)
     }
 }
 
+// ---- Internal helpers ---------------------------------------------------
+
+/// Walk a directory and collect every file whose extension matches the
+/// language filter.
+fn discover_files(root: &Path, lang: Language) -> Result<Vec<PathBuf>, IcbError> {
+    let extensions = extensions_for_language(lang);
+    let mut out = Vec::new();
+
+    for entry in WalkDir::new(root).follow_links(false) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => return Err(IcbError::Parse(e.to_string())),
+        };
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if should_include(path, &extensions) {
+            out.push(path.to_path_buf());
+        }
+    }
+
+    Ok(out)
+}
+
+/// Read a single file, parse it, and return `None` on any failure.
+fn process_file(
+    manager: &ParserManager,
+    lang: Language,
+    path: &Path,
+    base: &Path,
+) -> Result<Option<(String, Vec<RawNode>)>, IcbError> {
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(_) => return Ok(None),
+    };
+    let facts = match manager.parse_file(lang, &source) {
+        Ok(f) => f,
+        Err(_) => return Ok(None),
+    };
+    if facts.is_empty() {
+        return Ok(None);
+    }
+    let rel = relative_path(path, base);
+    Ok(Some((rel, facts)))
+}
+
+/// Return the canonical form of `root`, or the original if it fails.
+fn normalize_root(root: &Path) -> PathBuf {
+    root.canonicalize().unwrap_or_else(|_| root.to_path_buf())
+}
+
+/// Compute a relative path from `base` to `path`.
+fn relative_path(path: &Path, base: &Path) -> String {
+    path.strip_prefix(base)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .to_string()
+}
+
+/// Check whether `path` should be included based on the allowed extensions.
+///
+/// When `exts` is empty, **all** files are included (universal mode).
+fn should_include(path: &Path, exts: &[&str]) -> bool {
+    if exts.is_empty() {
+        return true;
+    }
+    match path.extension().and_then(|s| s.to_str()) {
+        Some(ext) => {
+            let ext = ext.to_lowercase();
+            exts.iter().any(|e| *e == ext)
+        }
+        None => false,
+    }
+}
+
+/// Return the list of file extensions accepted for a given language.
 fn extensions_for_language(lang: Language) -> Vec<&'static str> {
     match lang {
         Language::Python => vec!["py"],
-        Language::Cpp | Language::CppTreeSitter => vec!["c", "cpp", "cc", "cxx", "h", "hpp"],
+        Language::Cpp | Language::CppTreeSitter => vec![
+            "c", "cpp", "cc", "cxx", "h", "hpp", "hxx", "hh", "inl", "inc",
+        ],
         Language::Rust => vec!["rs"],
         Language::JavaScript => vec!["js", "jsx", "ts", "tsx"],
         Language::Go => vec!["go"],

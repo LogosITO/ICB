@@ -42,8 +42,8 @@ export default function Dashboard() {
             </div>
             <div style={{ flex: 1, overflow: 'auto' }}>
                 {activeTab === 'overview' && <Overview />}
-                {activeTab === 'functions' && <Functions />}
-                {activeTab === 'classes' && <Classes />}
+                {activeTab === 'functions' && <Functions onSelect={(name) => setFocusNode(name)} />}
+                {activeTab === 'classes' && <Classes onSelect={(name) => setFocusNode(name)} />}
                 {activeTab === 'graph' && (
                     <GraphViewer
                         focus={focusNode}

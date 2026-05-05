@@ -1,3 +1,9 @@
+//! Handle project upload via multipart/form-data.
+//!
+//! Saves uploaded files into a temporary directory, auto‑detects the
+//! language, builds a graph (with system headers excluded by default),
+//! and then cleans up.
+
 use actix_multipart::Multipart;
 use actix_web::{web, HttpResponse};
 use futures_util::StreamExt;
@@ -9,6 +15,8 @@ use zip::ZipArchive;
 
 use crate::graph_builder;
 
+/// Receives a multipart request containing a ZIP file, extracts it to a
+/// temporary directory, and builds a graph from the extracted sources.
 pub async fn handle_upload(
     data: web::Data<Mutex<CodePropertyGraph>>,
     mut payload: Multipart,
@@ -67,7 +75,8 @@ pub async fn handle_upload(
         }
     }
 
-    let graph_result = graph_builder::build_or_load_graph(tmp.path(), "auto", None);
+    // Build graph with no system headers
+    let graph_result = graph_builder::build_or_load_graph(tmp.path(), "auto", None, true);
 
     drop(tmp);
 
