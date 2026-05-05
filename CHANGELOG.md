@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/LogosITO/ICB/compare/v0.6.1...v0.6.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* expanded caching for clang pipeline ([641419d](https://github.com/LogosITO/ICB/commit/641419d369378d10964510213622498029eedac5))
+
 ## [0.6.1](https://github.com/LogosITO/ICB/compare/v0.6.0...v0.6.1) (2026-05-05)
 
 
