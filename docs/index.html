@@ -8,20 +8,31 @@
         :root {
             --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
             --border: #333; --hover: #222; --header: #888;
+            --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            --radius: 6px;
         }
         body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
         header { padding: 2rem; border-bottom: 1px solid var(--border); text-align: center; }
         h1 { font-size: 2rem; color: var(--accent); }
         .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
-        .card { background: var(--surface); border: 1px solid var(--border); padding: 1.5rem; margin: 1rem 0; border-radius: 4px; }
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            padding: 1.5rem; margin: 1rem 0; border-radius: var(--radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
         .card h2 { margin-top: 0; color: var(--accent); }
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
         table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
-        th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        th, td { padding: 0.4rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
         th { color: var(--header); font-weight: 500; text-align: left; }
-        .metric { font-weight: 600; }
+        tbody tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+        tbody tr:hover { background: var(--hover); }
+        .time {
+            font-family: var(--mono); text-align: right; white-space: nowrap;
+            width: 120px; color: var(--accent);
+        }
         .error { color: #c44; font-size: 0.9rem; margin-top: 0.5rem; }
     </style>
 </head>
@@ -61,7 +72,6 @@
             if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
             const json = await resp.json();
 
-            // Поддержка как старого, так и нового формата
             const scenarios = json.scenarios || {};
             const legacy = json.legacy || {};
 
@@ -70,8 +80,11 @@
                 for (const [scenario, backends] of Object.entries(scenarios)) {
                     html += `<h3>${scenario}</h3><table><thead><tr><th>Backend</th><th>Time</th></tr></thead><tbody>`;
                     for (const [backend, timeNs] of Object.entries(backends)) {
-                        const timeMs = (timeNs / 1e6).toFixed(2) + ' ms';
-                        html += `<tr><td>${backend}</td><td class="metric">${timeMs}</td></tr>`;
+                        const timeMs = timeNs / 1e6;
+                        const display = timeMs >= 1000
+                            ? (timeMs / 1000).toFixed(2) + ' s'
+                            : timeMs.toFixed(2) + ' ms';
+                        html += `<tr><td>${backend}</td><td class="time">${display}</td></tr>`;
                     }
                     html += '</tbody></table>';
                 }
@@ -79,7 +92,7 @@
                 html += '<table><thead><tr><th>Benchmark</th><th>Time</th></tr></thead><tbody>';
                 for (const [name, entry] of Object.entries(legacy)) {
                     const timeMs = (entry.time_ns / 1e6).toFixed(2) + ' ms';
-                    html += `<tr><td>${name}</td><td class="metric">${timeMs}</td></tr>`;
+                    html += `<tr><td>${name}</td><td class="time">${timeMs}</td></tr>`;
                 }
                 html += '</tbody></table>';
             } else {

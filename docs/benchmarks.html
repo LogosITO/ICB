@@ -9,25 +9,49 @@
             --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
             --border: #333; --hover: #222; --header: #888;
             --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            --radius: 6px;
         }
         body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
         header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); }
         h1 { margin: 0 0 0.25rem; font-size: 1.5rem; color: var(--accent); }
-        .meta { font-size: 0.8rem; color: var(--header); display: flex; gap: 1rem; }
+        .meta { font-size: 0.8rem; color: var(--header); display: flex; gap: 1rem; flex-wrap: wrap; }
         nav { display: flex; gap: 2px; margin: 1rem 2rem; flex-wrap: wrap; }
-        nav a { padding: 0.5rem 1rem; text-decoration: none; color: var(--text); background: var(--surface); border-bottom: 2px solid transparent; transition: .2s; font-size: 0.85rem; }
-        nav a.active, nav a:hover { border-bottom-color: var(--accent); color: white; }
+        nav a {
+            padding: 0.5rem 1rem; text-decoration: none; color: var(--text);
+            background: var(--surface); border-bottom: 2px solid transparent;
+            transition: all 0.2s; font-size: 0.85rem; border-radius: var(--radius) var(--radius) 0 0;
+        }
+        nav a.active, nav a:hover {
+            border-bottom-color: var(--accent); color: white;
+            background: #1e1e1e; box-shadow: 0 -2px 6px rgba(0,0,0,0.3);
+        }
         .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
-        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
-        th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+        .scenario-block {
+            background: var(--surface); border: 1px solid var(--border);
+            border-radius: var(--radius); padding: 1rem; margin: 1.5rem 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .scenario-title {
+            font-size: 1.1rem; font-weight: 600; color: var(--accent);
+            margin-bottom: 0.75rem; padding-bottom: 0.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+        table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
+        th, td { padding: 0.5rem 0.8rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
         th { color: var(--header); font-weight: 500; }
-        tr:hover { background: var(--hover); }
-        .time { font-family: var(--mono); text-align: right; white-space: nowrap; }
-        .bar-cell { width: 30%; }
-        .bar { height: 6px; background: var(--accent); border-radius: 3px; min-width: 2px; transition: width 0.4s; }
+        tbody tr:nth-child(even) { background: rgba(255,255,255,0.03); }
+        tbody tr:hover { background: var(--hover); }
+        .time {
+            font-family: var(--mono); text-align: right; white-space: nowrap;
+            width: 120px; color: var(--accent);
+        }
+        .bar-cell { width: 40%; }
+        .bar {
+            height: 6px; background: var(--accent); border-radius: 3px;
+            min-width: 2px; transition: width 0.4s;
+        }
         .loader { text-align: center; padding: 3rem; color: var(--header); }
         .error { color: #c44; }
-        .scenario-title { margin-top: 2rem; color: var(--accent); font-weight: 600; }
     </style>
 </head>
 <body>
@@ -41,8 +65,6 @@
 </div>
 
 <script>
-    const MONO = "'Cascadia Code', 'Fira Code', 'Consolas', monospace";
-
     async function loadData() {
         try {
             const resp = await fetch('bench-data/latest.json');
@@ -58,7 +80,6 @@
     function buildUI(data) {
         const scenarios = data.scenarios || {};
         const meta = data.metadata || {};
-        // Метадата
         document.getElementById('meta').innerHTML =
             `<span>Generated: ${meta.date || '?'}</span><span>Commit: ${meta.commit.slice(0,7) || '?'}</span><span>Version: ${meta.version || '?'}</span>`;
 
@@ -71,7 +92,6 @@
             return;
         }
 
-        // Навигация
         tabs.forEach((tab, idx) => {
             const a = document.createElement('a');
             a.href = `#${tab}`;
@@ -93,11 +113,9 @@
         const content = document.getElementById('content');
         const maxTime = Math.max(...Object.values(backends));
 
-        let html = `<div class="scenario-title">${name}</div><table><thead><tr><th>Backend</th><th>Time</th><th>Relative</th></tr></thead><tbody>`;
-
+        let html = `<div class="scenario-block"><div class="scenario-title">${name}</div><table><thead><tr><th>Backend</th><th>Time</th><th>Relative</th></tr></thead><tbody>`;
         for (const [backend, timeNs] of Object.entries(backends)) {
-            const timeMs = (timeNs / 1e6);
-            // Автоматический выбор единиц
+            const timeMs = timeNs / 1e6;
             const display = timeMs >= 1000
                 ? (timeMs / 1000).toFixed(2) + ' s'
                 : timeMs.toFixed(2) + ' ms';
@@ -108,7 +126,7 @@
                 <td class="bar-cell"><div class="bar" style="width:${Math.max(pct, 1)}%"></div></td>
             </tr>`;
         }
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         content.innerHTML = html;
     }
 
