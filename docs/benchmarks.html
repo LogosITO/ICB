@@ -12,7 +12,7 @@
         body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
         header { padding: 1.5rem; border-bottom: 1px solid var(--border); }
         h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
-        nav { display: flex; gap: 1px; margin: 1rem 0; }
+        nav { display: flex; gap: 1px; margin: 1rem 0; flex-wrap: wrap; }
         nav a { padding: 0.5rem 1rem; text-decoration: none; color: var(--text); background: var(--surface); border-bottom: 2px solid transparent; transition: .2s; }
         nav a.active, nav a:hover { border-bottom-color: var(--accent); color: white; }
         .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
@@ -23,92 +23,83 @@
         .loader { text-align: center; padding: 3rem; color: var(--header); }
         .error { color: #c44; }
         .metric { font-weight: 600; }
+        .bar { height: 8px; background: var(--accent); border-radius: 4px; min-width: 4px; }
+        .meta { font-size: 0.8rem; color: var(--header); margin-bottom: 1rem; }
     </style>
 </head>
 <body>
 <header>
     <h1>ICB Benchmarks</h1>
-    <nav id="tabNav">
-        <a href="#clang" class="active">icb-clang</a>
-        <a href="#graph">icb-graph</a>
-        <a href="#server">icb-server</a>
-        <a href="#parser-ts">icb-parser (tree-sitter)</a>
-    </nav>
+    <nav id="tabNav"></nav>
 </header>
 <div class="container">
+    <div id="meta" class="meta"></div>
     <div id="content" class="loader">Loading benchmark data…</div>
 </div>
 
 <script>
-    const TABS = {
-        clang: 'icb-clang',
-        graph: 'icb-graph',
-        server: 'icb-server',
-        'parser-ts': 'icb-parser (tree-sitter)'
-    };
-
-    function createTable(benchmarks) {
-        if (!benchmarks || benchmarks.length === 0) return '<p>No data available.</p>';
-        let html = '<table><thead><tr><th>Benchmark</th><th>Time</th></tr></thead><tbody>';
-        benchmarks.forEach(b => {
-            const time = typeof b.time_ns === 'number'
-                ? (b.time_ns / 1e6).toFixed(2) + ' ms'
-                : (typeof b.time_ms === 'number' ? b.time_ms.toFixed(2) + ' ms' : b.time || 'n/a');
-            html += `<tr><td>${b.name}</td><td class="metric">${time}</td></tr>`;
-        });
-        html += '</tbody></table>';
-        return html;
-    }
-
-    function renderTab(tabId) {
-        const data = window.__benchData;
-        if (!data || !data[tabId]) {
-            document.getElementById('content').innerHTML = '<div class="loader">No data for this tab.</div>';
-            return;
-        }
-        const benchmarks = data[tabId];
-        document.getElementById('content').innerHTML = createTable(benchmarks);
-    }
-
-    function switchTab(tabId) {
-        document.querySelectorAll('#tabNav a').forEach(a => a.classList.remove('active'));
-        document.querySelector(`#tabNav a[href="#${tabId}"]`).classList.add('active');
-        renderTab(tabId);
-    }
-
     async function loadData() {
         try {
             const resp = await fetch('bench-data/latest.json');
             if (!resp.ok) throw new Error('Network error');
             const json = await resp.json();
-            window.__benchData = json;
-            // default tab
-            const hash = window.location.hash.slice(1) || 'clang';
-            if (!json[hash]) {
-                // fallback to first available
-                const first = Object.keys(json)[0] || 'clang';
-                window.location.hash = first;
-                switchTab(first);
-            } else {
-                switchTab(hash);
-            }
+            window.__data = json;
+            buildUI(json);
         } catch (e) {
-            const el = document.getElementById('content');
-            el.textContent = 'Failed to load benchmark data: ' + e.message;
+            document.getElementById('content').innerHTML = `<div class="error">Failed to load data: ${e.message}</div>`;
         }
     }
 
-    window.addEventListener('DOMContentLoaded', () => {
-        document.querySelectorAll('#tabNav a').forEach(a => {
+    function buildUI(data) {
+        const scenarios = data.scenarios || {};
+        const meta = data.metadata || {};
+        document.getElementById('meta').textContent =
+            `Generated: ${meta.date || '?'}  Commit: ${meta.commit.slice(0, 7) || '?'}  Version: ${meta.version || '?'}`;
+
+        const nav = document.getElementById('tabNav');
+        const content = document.getElementById('content');
+        const tabs = Object.keys(scenarios);
+
+        if (tabs.length === 0) {
+            content.innerHTML = '<div class="loader">No benchmark scenarios found.</div>';
+            return;
+        }
+
+        tabs.forEach((tab, idx) => {
+            const a = document.createElement('a');
+            a.href = `#${tab}`;
+            a.textContent = tab;
+            if (idx === 0) a.classList.add('active');
             a.addEventListener('click', e => {
                 e.preventDefault();
-                const tab = a.getAttribute('href').slice(1);
-                window.location.hash = tab;
-                switchTab(tab);
+                document.querySelectorAll('#tabNav a').forEach(el => el.classList.remove('active'));
+                a.classList.add('active');
+                renderScenario(tab, scenarios[tab]);
             });
+            nav.appendChild(a);
         });
-        loadData();
-    });
+
+        renderScenario(tabs[0], scenarios[tabs[0]]);
+    }
+
+    function renderScenario(name, backends) {
+        const content = document.getElementById('content');
+        const maxTime = Math.max(...Object.values(backends));
+        let html = `<h2>${name}</h2><table><thead><tr><th>Backend</th><th>Time</th><th>Bar</th></tr></thead><tbody>`;
+        for (const [backend, timeNs] of Object.entries(backends)) {
+            const timeMs = (timeNs / 1e6).toFixed(2);
+            const pct = Math.round((timeNs / maxTime) * 100);
+            html += `<tr>
+                <td>${backend}</td>
+                <td class="metric">${timeMs} ms</td>
+                <td><div class="bar" style="width:${Math.max(pct, 1)}%"></div></td>
+            </tr>`;
+        }
+        html += '</tbody></table>';
+        content.innerHTML = html;
+    }
+
+    window.addEventListener('DOMContentLoaded', loadData);
 </script>
 </body>
 </html>

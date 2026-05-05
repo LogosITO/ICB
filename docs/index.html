@@ -18,7 +18,10 @@
         .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 1rem; }
         a { color: var(--accent); text-decoration: none; }
         a:hover { text-decoration: underline; }
-        .bench-status { font-size: 0.9rem; color: var(--header); }
+        table { width: 100%; border-collapse: collapse; margin: 0.5rem 0; }
+        th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
+        th { color: var(--header); font-weight: 500; text-align: left; }
+        .metric { font-weight: 600; }
     </style>
 </head>
 <body>
@@ -41,7 +44,7 @@
     </div>
 
     <div class="card">
-        <h2>Latest Benchmarks <span class="bench-status" id="benchDate"></span></h2>
+        <h2>Latest Benchmarks</h2>
         <div id="benchContent">Loading…</div>
     </div>
 </div>
@@ -52,17 +55,17 @@
             const resp = await fetch('bench-data/latest.json');
             if (!resp.ok) throw new Error('No data');
             const json = await resp.json();
+            const scenarios = json.scenarios || {};
             let html = '';
-            for (const [group, tests] of Object.entries(json)) {
-                html += `<h3>${group}</h3><ul>`;
-                tests.forEach(t => {
-                    const time = (t.time_ns / 1e6).toFixed(2) + ' ms';
-                    html += `<li>${t.name}: <strong>${time}</strong></li>`;
-                });
-                html += '</ul>';
+            for (const [scenario, backends] of Object.entries(scenarios)) {
+                html += `<h3>${scenario}</h3><table><thead><tr><th>Backend</th><th>Time</th></tr></thead><tbody>`;
+                for (const [backend, timeNs] of Object.entries(backends)) {
+                    const timeMs = (timeNs / 1e6).toFixed(2) + ' ms';
+                    html += `<tr><td>${backend}</td><td class="metric">${timeMs}</td></tr>`;
+                }
+                html += '</tbody></table>';
             }
-            document.getElementById('benchContent').innerHTML = html;
-            document.getElementById('benchDate').textContent = '';
+            document.getElementById('benchContent').innerHTML = html || 'No benchmark data yet.';
         } catch (e) {
             document.getElementById('benchContent').innerHTML = 'Benchmark data not available yet.';
         }
