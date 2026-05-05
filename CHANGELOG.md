@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/LogosITO/ICB/compare/v0.4.4...v0.5.0) (2026-05-05)
+
+
+### Features
+
+* improve benchmark JSON structure and dashboard ([33baeac](https://github.com/LogosITO/ICB/commit/33baeac5cde3f2c388ef8481ff2d4d5af95afe09))
+
 ## [0.4.4](https://github.com/LogosITO/ICB/compare/v0.4.3...v0.4.4) (2026-05-05)
 
 
