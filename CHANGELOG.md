@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.2](https://github.com/LogosITO/ICB/compare/v0.5.1...v0.5.2) (2026-05-05)
+
+
+### Bug Fixes
+
+* resolve unknown backends in benchmarks and improve layout ([8eb215d](https://github.com/LogosITO/ICB/commit/8eb215d931be3972829074c7668bcf782ff72a2e))
+
 ## [0.5.1](https://github.com/LogosITO/ICB/compare/v0.5.0...v0.5.1) (2026-05-05)
 
 
