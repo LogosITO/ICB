@@ -1,12 +1,3 @@
-//! Collects multiple `bencher`-formatted benchmark outputs and produces a
-//! rich JSON object with per‑scenario grouping, metadata, and compatibility
-//! with the legacy flat format.
-//!
-//! Usage:
-//! ```bash
-//! cargo run -p generate-bench-json -- bench_clang.txt bench_graph.txt … > latest.json
-//! ```
-
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::env;
@@ -90,60 +81,30 @@ fn parse_bencher_line(line: &str) -> Option<(String, f64)> {
     Some((name, ns))
 }
 
-/// Map a benchmark name to a (scenario, backend) pair.
 fn classify(name: &str) -> (String, String) {
-    // Examples:
-    // single_large_file_1000_funcs (Clang) -> ("Single Large File", "Clang")
-    // ts_cpp_large_file_1000_funcs -> ("Single Large File", "tree-sitter C++")
-    // ts_go_large_file_1000_funcs -> ("Single Large File", "tree-sitter Go")
-    // ts_ruby_large_file_1000_funcs -> ("Single Large File", "tree-sitter Ruby")
-    // deeply_nested_5_levels (Clang) -> ("Deeply Nested", "Clang")
-    // ts_cpp_deeply_nested_5_levels -> ("Deeply Nested", "tree-sitter C++")
-    // many_calls_10000 (Clang) -> ("Many Calls", "Clang")
-    // ts_cpp_many_calls_10000 -> ("Many Calls", "tree-sitter C++")
-    // with_system_headers / without_system_headers -> ("System Headers", ...)
-    // build_graph_*, resolve_calls_*, full_analysis_*, analytics_metrics_*, graph_serialization_*, graph_subgraph_*, ...
-    // We'll map to a human-readable scenario name and a backend label.
-
+    // Clang benches
     if name.starts_with("single_large_file") {
         return ("Single Large File".into(), "Clang".into());
     }
-    if name.starts_with("ts_cpp_single_large_file") || name.starts_with("ts_cpp_large_file") {
-        return ("Single Large File".into(), "tree-sitter C++".into());
-    }
-    if name.starts_with("ts_go_large_file") || name.starts_with("ts_go_single_large_file") {
-        return ("Single Large File".into(), "tree-sitter Go".into());
-    }
-    if name.starts_with("ts_ruby_large_file") || name.starts_with("ts_ruby_single_large_file") {
-        return ("Single Large File".into(), "tree-sitter Ruby".into());
-    }
-
     if name.starts_with("deeply_nested") {
         return ("Deeply Nested".into(), "Clang".into());
     }
-    if name.starts_with("ts_cpp_deeply_nested") {
-        return ("Deeply Nested".into(), "tree-sitter C++".into());
-    }
-    if name.starts_with("ts_go_deeply_nested") {
-        return ("Deeply Nested".into(), "tree-sitter Go".into());
-    }
-    if name.starts_with("ts_ruby_deeply_nested") {
-        return ("Deeply Nested".into(), "tree-sitter Ruby".into());
-    }
-
     if name.starts_with("many_calls") {
         return ("Many Calls".into(), "Clang".into());
     }
-    if name.starts_with("ts_cpp_many_calls") {
-        return ("Many Calls".into(), "tree-sitter C++".into());
+
+    // Tree‑sitter benches
+    if name.starts_with("ts_cpp_") {
+        return classify_ts("C++", name);
     }
-    if name.starts_with("ts_go_many_calls") {
-        return ("Many Calls".into(), "tree-sitter Go".into());
+    if name.starts_with("ts_go_") {
+        return classify_ts("Go", name);
     }
-    if name.starts_with("ts_ruby_many_calls") {
-        return ("Many Calls".into(), "tree-sitter Ruby".into());
+    if name.starts_with("ts_ruby_") {
+        return classify_ts("Ruby", name);
     }
 
+    // System headers
     if name.starts_with("with_system_headers") {
         return ("System Headers".into(), "Clang (with)".into());
     }
@@ -151,6 +112,27 @@ fn classify(name: &str) -> (String, String) {
         return ("System Headers".into(), "Clang (without)".into());
     }
 
+    // Server metrics
+    if name.starts_with("class_metrics") {
+        return ("Class Metrics".into(), "icb-server".into());
+    }
+    if name.starts_with("file_metrics") {
+        return ("File Metrics".into(), "icb-server".into());
+    }
+    if name.starts_with("focal_graph") {
+        return ("Focal Graph".into(), "icb-server".into());
+    }
+    if name.starts_with("function_metrics") {
+        return ("Function Metrics".into(), "icb-server".into());
+    }
+    if name.starts_with("graph_json_serialize") {
+        return ("Graph Serialization".into(), "icb-server".into());
+    }
+    if name.starts_with("subgraph_by_kind") {
+        return ("Subgraph Extraction".into(), "icb-server".into());
+    }
+
+    // Graph benches
     if name.starts_with("build_graph") {
         return ("Graph Build".into(), "icb-graph".into());
     }
@@ -160,17 +142,23 @@ fn classify(name: &str) -> (String, String) {
     if name.starts_with("full_analysis") {
         return ("Full Analysis".into(), "icb-graph".into());
     }
-    if name.starts_with("analytics_metrics") {
-        return ("Analytics Metrics".into(), "icb-server".into());
-    }
-    if name.starts_with("graph_serialization") {
-        return ("Graph Serialization".into(), "icb-server".into());
-    }
-    if name.starts_with("subgraph_by_kind") {
-        return ("Subgraph Extraction".into(), "icb-server".into());
-    }
 
-    // Fallback: use the first part of the name as scenario, backend "unknown"
     let scenario = name.split('_').next().unwrap_or("other").to_string();
     (scenario, "unknown".into())
+}
+
+fn classify_ts(lang: &str, name: &str) -> (String, String) {
+    let backend = format!("tree-sitter {}", lang);
+    let rest = name
+        .strip_prefix(&format!("ts_{}_", lang.to_lowercase()))
+        .unwrap_or(name);
+    if rest.starts_with("large_file") || rest.starts_with("single_large_file") {
+        ("Single Large File".into(), backend)
+    } else if rest.starts_with("deeply_nested") {
+        ("Deeply Nested".into(), backend)
+    } else if rest.starts_with("many_calls") {
+        ("Many Calls".into(), backend)
+    } else {
+        (rest.to_string(), backend)
+    }
 }

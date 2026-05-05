@@ -8,36 +8,41 @@
         :root {
             --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
             --border: #333; --hover: #222; --header: #888;
+            --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
         }
         body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
-        header { padding: 1.5rem; border-bottom: 1px solid var(--border); }
-        h1 { margin: 0; font-size: 1.5rem; color: var(--accent); }
-        nav { display: flex; gap: 1px; margin: 1rem 0; flex-wrap: wrap; }
-        nav a { padding: 0.5rem 1rem; text-decoration: none; color: var(--text); background: var(--surface); border-bottom: 2px solid transparent; transition: .2s; }
+        header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); }
+        h1 { margin: 0 0 0.25rem; font-size: 1.5rem; color: var(--accent); }
+        .meta { font-size: 0.8rem; color: var(--header); display: flex; gap: 1rem; }
+        nav { display: flex; gap: 2px; margin: 1rem 2rem; flex-wrap: wrap; }
+        nav a { padding: 0.5rem 1rem; text-decoration: none; color: var(--text); background: var(--surface); border-bottom: 2px solid transparent; transition: .2s; font-size: 0.85rem; }
         nav a.active, nav a:hover { border-bottom-color: var(--accent); color: white; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
         table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
         th, td { padding: 0.6rem 0.8rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
         th { color: var(--header); font-weight: 500; }
         tr:hover { background: var(--hover); }
+        .time { font-family: var(--mono); text-align: right; white-space: nowrap; }
+        .bar-cell { width: 30%; }
+        .bar { height: 6px; background: var(--accent); border-radius: 3px; min-width: 2px; transition: width 0.4s; }
         .loader { text-align: center; padding: 3rem; color: var(--header); }
         .error { color: #c44; }
-        .metric { font-weight: 600; }
-        .bar { height: 8px; background: var(--accent); border-radius: 4px; min-width: 4px; }
-        .meta { font-size: 0.8rem; color: var(--header); margin-bottom: 1rem; }
+        .scenario-title { margin-top: 2rem; color: var(--accent); font-weight: 600; }
     </style>
 </head>
 <body>
 <header>
     <h1>ICB Benchmarks</h1>
+    <div id="meta" class="meta"></div>
     <nav id="tabNav"></nav>
 </header>
 <div class="container">
-    <div id="meta" class="meta"></div>
     <div id="content" class="loader">Loading benchmark data…</div>
 </div>
 
 <script>
+    const MONO = "'Cascadia Code', 'Fira Code', 'Consolas', monospace";
+
     async function loadData() {
         try {
             const resp = await fetch('bench-data/latest.json');
@@ -53,8 +58,9 @@
     function buildUI(data) {
         const scenarios = data.scenarios || {};
         const meta = data.metadata || {};
-        document.getElementById('meta').textContent =
-            `Generated: ${meta.date || '?'}  Commit: ${meta.commit.slice(0, 7) || '?'}  Version: ${meta.version || '?'}`;
+        // Метадата
+        document.getElementById('meta').innerHTML =
+            `<span>Generated: ${meta.date || '?'}</span><span>Commit: ${meta.commit.slice(0,7) || '?'}</span><span>Version: ${meta.version || '?'}</span>`;
 
         const nav = document.getElementById('tabNav');
         const content = document.getElementById('content');
@@ -65,6 +71,7 @@
             return;
         }
 
+        // Навигация
         tabs.forEach((tab, idx) => {
             const a = document.createElement('a');
             a.href = `#${tab}`;
@@ -85,14 +92,20 @@
     function renderScenario(name, backends) {
         const content = document.getElementById('content');
         const maxTime = Math.max(...Object.values(backends));
-        let html = `<h2>${name}</h2><table><thead><tr><th>Backend</th><th>Time</th><th>Bar</th></tr></thead><tbody>`;
+
+        let html = `<div class="scenario-title">${name}</div><table><thead><tr><th>Backend</th><th>Time</th><th>Relative</th></tr></thead><tbody>`;
+
         for (const [backend, timeNs] of Object.entries(backends)) {
-            const timeMs = (timeNs / 1e6).toFixed(2);
+            const timeMs = (timeNs / 1e6);
+            // Автоматический выбор единиц
+            const display = timeMs >= 1000
+                ? (timeMs / 1000).toFixed(2) + ' s'
+                : timeMs.toFixed(2) + ' ms';
             const pct = Math.round((timeNs / maxTime) * 100);
             html += `<tr>
                 <td>${backend}</td>
-                <td class="metric">${timeMs} ms</td>
-                <td><div class="bar" style="width:${Math.max(pct, 1)}%"></div></td>
+                <td class="time">${display}</td>
+                <td class="bar-cell"><div class="bar" style="width:${Math.max(pct, 1)}%"></div></td>
             </tr>`;
         }
         html += '</tbody></table>';

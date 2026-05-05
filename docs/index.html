@@ -22,6 +22,7 @@
         th, td { padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
         th { color: var(--header); font-weight: 500; text-align: left; }
         .metric { font-weight: 600; }
+        .error { color: #c44; font-size: 0.9rem; margin-top: 0.5rem; }
     </style>
 </head>
 <body>
@@ -46,28 +47,50 @@
     <div class="card">
         <h2>Latest Benchmarks</h2>
         <div id="benchContent">Loading…</div>
+        <div id="benchError" class="error"></div>
     </div>
 </div>
 
 <script>
     async function loadBenchmarks() {
+        const content = document.getElementById('benchContent');
+        const errorEl = document.getElementById('benchError');
+
         try {
             const resp = await fetch('bench-data/latest.json');
-            if (!resp.ok) throw new Error('No data');
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}: ${resp.statusText}`);
             const json = await resp.json();
+
+            // Поддержка как старого, так и нового формата
             const scenarios = json.scenarios || {};
+            const legacy = json.legacy || {};
+
             let html = '';
-            for (const [scenario, backends] of Object.entries(scenarios)) {
-                html += `<h3>${scenario}</h3><table><thead><tr><th>Backend</th><th>Time</th></tr></thead><tbody>`;
-                for (const [backend, timeNs] of Object.entries(backends)) {
-                    const timeMs = (timeNs / 1e6).toFixed(2) + ' ms';
-                    html += `<tr><td>${backend}</td><td class="metric">${timeMs}</td></tr>`;
+            if (Object.keys(scenarios).length > 0) {
+                for (const [scenario, backends] of Object.entries(scenarios)) {
+                    html += `<h3>${scenario}</h3><table><thead><tr><th>Backend</th><th>Time</th></tr></thead><tbody>`;
+                    for (const [backend, timeNs] of Object.entries(backends)) {
+                        const timeMs = (timeNs / 1e6).toFixed(2) + ' ms';
+                        html += `<tr><td>${backend}</td><td class="metric">${timeMs}</td></tr>`;
+                    }
+                    html += '</tbody></table>';
+                }
+            } else if (Object.keys(legacy).length > 0) {
+                html += '<table><thead><tr><th>Benchmark</th><th>Time</th></tr></thead><tbody>';
+                for (const [name, entry] of Object.entries(legacy)) {
+                    const timeMs = (entry.time_ns / 1e6).toFixed(2) + ' ms';
+                    html += `<tr><td>${name}</td><td class="metric">${timeMs}</td></tr>`;
                 }
                 html += '</tbody></table>';
+            } else {
+                html = 'Benchmark data not available yet.';
             }
-            document.getElementById('benchContent').innerHTML = html || 'No benchmark data yet.';
+
+            content.innerHTML = html;
+            errorEl.textContent = '';
         } catch (e) {
-            document.getElementById('benchContent').innerHTML = 'Benchmark data not available yet.';
+            content.innerHTML = 'Benchmark data could not be loaded.';
+            errorEl.textContent = e.message;
         }
     }
     window.addEventListener('DOMContentLoaded', loadBenchmarks);
