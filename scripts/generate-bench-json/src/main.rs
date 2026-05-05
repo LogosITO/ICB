@@ -10,20 +10,21 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("Usage: {} <file1> [file2 ...]", args[0]);
     }
 
-    let mut scenarios: BTreeMap<String, BTreeMap<String, f64>> = BTreeMap::new();
-    let mut legacy: BTreeMap<String, Vec<LegacyEntry>> = BTreeMap::new();
+    // Структура: crate → scenario → backend → время (нс)
+    let mut crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>> = BTreeMap::new();
 
     for path in &args[1..] {
         let file = fs::File::open(path)?;
         for line in io::BufReader::new(file).lines() {
             let line = line?;
             if let Some((name, ns)) = parse_bencher_line(&line) {
-                let (scenario, backend) = classify(&name);
-                scenarios.entry(scenario).or_default().insert(backend, ns);
-                legacy.entry(name.clone()).or_default().push(LegacyEntry {
-                    name: name.clone(),
-                    time_ns: ns,
-                });
+                let (crate_name, scenario, backend) = classify(&name);
+                crates
+                    .entry(crate_name)
+                    .or_default()
+                    .entry(scenario)
+                    .or_default()
+                    .insert(backend, ns);
             }
         }
     }
@@ -34,14 +35,7 @@ fn main() -> anyhow::Result<()> {
         version: env!("CARGO_PKG_VERSION").to_string(),
     };
 
-    let output = Output {
-        metadata,
-        scenarios,
-        legacy: legacy
-            .into_iter()
-            .map(|(k, v)| (k, v.into_iter().next().unwrap()))
-            .collect(),
-    };
+    let output = Output { metadata, crates };
 
     serde_json::to_writer(io::stdout(), &output)?;
     Ok(())
@@ -50,8 +44,7 @@ fn main() -> anyhow::Result<()> {
 #[derive(Serialize)]
 struct Output {
     metadata: Metadata,
-    scenarios: BTreeMap<String, BTreeMap<String, f64>>,
-    legacy: BTreeMap<String, LegacyEntry>,
+    crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
 }
 
 #[derive(Serialize)]
@@ -59,12 +52,6 @@ struct Metadata {
     date: String,
     commit: String,
     version: String,
-}
-
-#[derive(Serialize, Clone)]
-struct LegacyEntry {
-    name: String,
-    time_ns: f64,
 }
 
 fn parse_bencher_line(line: &str) -> Option<(String, f64)> {
@@ -81,84 +68,76 @@ fn parse_bencher_line(line: &str) -> Option<(String, f64)> {
     Some((name, ns))
 }
 
-fn classify(name: &str) -> (String, String) {
-    // Clang benches
+/// Возвращает (имя крейта, сценарий, бэкенд)
+fn classify(name: &str) -> (String, String, String) {
+    // icb-clang
     if name.starts_with("single_large_file") {
-        return ("Single Large File".into(), "Clang".into());
+        return (
+            "icb-clang".into(),
+            "Single Large File".into(),
+            "Clang".into(),
+        );
     }
     if name.starts_with("deeply_nested") {
-        return ("Deeply Nested".into(), "Clang".into());
+        return ("icb-clang".into(), "Deeply Nested".into(), "Clang".into());
     }
     if name.starts_with("many_calls") {
-        return ("Many Calls".into(), "Clang".into());
+        return ("icb-clang".into(), "Many Calls".into(), "Clang".into());
+    }
+    if name.starts_with("system_headers_") {
+        let backend = if name.contains("on") {
+            "with system"
+        } else {
+            "without system"
+        };
+        return ("icb-clang".into(), "System Headers".into(), backend.into());
     }
 
-    // Tree‑sitter benches
-    if name.starts_with("ts_cpp_") {
-        return classify_ts("C++", name);
-    }
-    if name.starts_with("ts_go_") {
-        return classify_ts("Go", name);
-    }
-    if name.starts_with("ts_ruby_") {
-        return classify_ts("Ruby", name);
-    }
-
-    // System headers
-    if name.starts_with("with_system_headers") {
-        return ("System Headers".into(), "Clang (with)".into());
-    }
-    if name.starts_with("without_system_headers") {
-        return ("System Headers".into(), "Clang (without)".into());
-    }
-
-    // Server metrics
-    if name.starts_with("class_metrics") {
-        return ("Class Metrics".into(), "icb-server".into());
-    }
-    if name.starts_with("file_metrics") {
-        return ("File Metrics".into(), "icb-server".into());
-    }
-    if name.starts_with("focal_graph") {
-        return ("Focal Graph".into(), "icb-server".into());
-    }
-    if name.starts_with("function_metrics") {
-        return ("Function Metrics".into(), "icb-server".into());
-    }
-    if name.starts_with("graph_json_serialize") {
-        return ("Graph Serialization".into(), "icb-server".into());
-    }
-    if name.starts_with("subgraph_by_kind") {
-        return ("Subgraph Extraction".into(), "icb-server".into());
-    }
-
-    // Graph benches
+    // icb-graph
     if name.starts_with("build_graph") {
-        return ("Graph Build".into(), "icb-graph".into());
+        return ("icb-graph".into(), "Graph Build".into(), "graph".into());
     }
     if name.starts_with("resolve_calls") {
-        return ("Resolve Calls".into(), "icb-graph".into());
+        return ("icb-graph".into(), "Resolve Calls".into(), "graph".into());
     }
     if name.starts_with("full_analysis") {
-        return ("Full Analysis".into(), "icb-graph".into());
+        return ("icb-graph".into(), "Full Analysis".into(), "graph".into());
     }
 
-    let scenario = name.split('_').next().unwrap_or("other").to_string();
-    (scenario, "unknown".into())
-}
-
-fn classify_ts(lang: &str, name: &str) -> (String, String) {
-    let backend = format!("tree-sitter {}", lang);
-    let rest = name
-        .strip_prefix(&format!("ts_{}_", lang.to_lowercase()))
-        .unwrap_or(name);
-    if rest.starts_with("large_file") || rest.starts_with("single_large_file") {
-        ("Single Large File".into(), backend)
-    } else if rest.starts_with("deeply_nested") {
-        ("Deeply Nested".into(), backend)
-    } else if rest.starts_with("many_calls") {
-        ("Many Calls".into(), backend)
-    } else {
-        (rest.to_string(), backend)
+    // icb-server
+    if name.starts_with("analytics_metrics")
+        || name.starts_with("function_metrics")
+        || name.starts_with("class_metrics")
+        || name.starts_with("file_metrics")
+    {
+        return ("icb-server".into(), "Metrics".into(), "server".into());
     }
+    if name.starts_with("json_serialize") || name.starts_with("graph_serialization") {
+        return (
+            "icb-server".into(),
+            "Graph Serialization".into(),
+            "server".into(),
+        );
+    }
+    if name.starts_with("subgraph_") || name.starts_with("focal_graph") {
+        return (
+            "icb-server".into(),
+            "Subgraph Extraction".into(),
+            "server".into(),
+        );
+    }
+
+    // icb-parser (tree-sitter)
+    if name.starts_with("ts_") {
+        let parts: Vec<&str> = name.splitn(3, '_').collect();
+        if parts.len() >= 3 {
+            let lang = parts[1];
+            let scenario = parts[2].to_string();
+            let backend = format!("tree-sitter {}", lang);
+            return ("icb-parser".into(), scenario, backend);
+        }
+    }
+
+    // fallback
+    ("unknown".into(), name.to_string(), "unknown".into())
 }

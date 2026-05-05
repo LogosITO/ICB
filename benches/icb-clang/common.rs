@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-
 //! Synthetic source generators for benchmarks.
 
 /// Generate `num_functions` empty functions, with every second one having a caller.

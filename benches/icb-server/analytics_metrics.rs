@@ -1,33 +1,34 @@
-//! Benchmarks for the analytics module of `icb-server`.
-//!
-//! Measures the time to compute function, class, and file metrics on
-//! graphs of increasing size.  These metrics are served by the
-//! `/api/functions`, `/api/classes`, and `/api/files` endpoints.
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use icb_server::analytics;
+use icb_common::NodeKind;
+use icb_graph::analysis;
+use icb_graph::graph::CodePropertyGraph;
 
-mod common;
-
-fn bench_analytics(c: &mut Criterion) {
-    let sizes = [100, 500, 2000];
-
-    for &size in &sizes {
-        let graph = common::build_graph(size);
-
-        c.bench_function(&format!("function_metrics_{}", size), |b| {
-            b.iter(|| analytics::collect_function_metrics(black_box(&graph)))
+fn make_test_graph(size: usize) -> CodePropertyGraph {
+    let mut cpg = CodePropertyGraph::new();
+    for i in 0..size {
+        cpg.graph.add_node(icb_graph::graph::Node {
+            kind: NodeKind::Function,
+            name: Some(format!("func{}", i)),
+            usr: Some("bench.cpp".into()),
+            start_line: i + 1,
+            end_line: i + 1,
         });
+    }
+    cpg
+}
 
-        c.bench_function(&format!("class_metrics_{}", size), |b| {
-            b.iter(|| analytics::collect_class_metrics(black_box(&graph)))
-        });
-
-        c.bench_function(&format!("file_metrics_{}", size), |b| {
-            b.iter(|| analytics::collect_file_metrics(black_box(&graph)))
+fn bench(c: &mut Criterion) {
+    for &size in &[100, 500, 2000] {
+        let graph = make_test_graph(size);
+        c.bench_function(&format!("analytics_{}_functions", size), |b| {
+            b.iter(|| {
+                // Use the public analysis functions available in icb_graph
+                let _ = analysis::detect_call_cycles(black_box(&graph));
+                let _ = analysis::detect_dead_code(black_box(&graph), &["main".to_string()]);
+            })
         });
     }
 }
 
-criterion_group!(benches, bench_analytics);
+criterion_group!(benches, bench);
 criterion_main!(benches);

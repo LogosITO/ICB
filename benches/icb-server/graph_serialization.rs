@@ -1,38 +1,39 @@
-//! Benchmarks for JSON serialization of the graph data structure.
-//!
-//! The server returns a [`GraphData`] object for every `/api/graph` request.
-//! This benchmark measures the cost of converting that structure into a
-//! JSON string, which is the dominant factor in response time for large
-//! subgraphs.
-
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use icb_graph::graph::GraphData;
+use icb_common::NodeKind;
+use icb_graph::graph::{CodePropertyGraph, Edge, GraphData};
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 
-mod common;
+fn make_test_graph(size: usize) -> CodePropertyGraph {
+    let mut cpg = CodePropertyGraph::new();
+    for i in 0..size {
+        cpg.graph.add_node(icb_graph::graph::Node {
+            kind: NodeKind::Function,
+            name: Some(format!("func{}", i)),
+            usr: Some("bench.cpp".into()),
+            start_line: i + 1,
+            end_line: i + 1,
+        });
+    }
+    cpg
+}
 
-fn bench_serialization(c: &mut Criterion) {
-    let sizes = [100, 500, 2000];
-
-    for &size in &sizes {
-        let graph = common::build_graph(size);
-
-        let data = GraphData {
-            nodes: graph.graph.node_weights().cloned().collect(),
-            edges: graph
+fn bench(c: &mut Criterion) {
+    for &size in &[100, 500, 2000] {
+        let graph = make_test_graph(size);
+        let data = {
+            let nodes: Vec<_> = graph.graph.node_weights().cloned().collect();
+            let edges: Vec<_> = graph
                 .graph
-                .edge_indices()
-                .map(|e| {
-                    let (src, tgt) = graph.graph.edge_endpoints(e).unwrap();
-                    (src.index(), tgt.index(), graph.graph[e].clone())
-                })
-                .collect(),
+                .edge_references()
+                .map(|e| (e.source().index(), e.target().index(), e.weight().clone()))
+                .collect();
+            GraphData { nodes, edges }
         };
-
-        c.bench_function(&format!("graph_json_serialize_{}", size), |b| {
+        c.bench_function(&format!("json_serialize_{}_nodes", size), |b| {
             b.iter(|| serde_json::to_string(black_box(&data)).unwrap())
         });
     }
 }
 
-criterion_group!(benches, bench_serialization);
+criterion_group!(benches, bench);
 criterion_main!(benches);
