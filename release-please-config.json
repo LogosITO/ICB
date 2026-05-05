@@ -1,4 +1,11 @@
 {
+  "changelog-sections": [
+    { "type": "feat", "section": "Features" },
+    { "type": "fix", "section": "Bug Fixes" },
+    { "type": "chore", "section": "Chores" },
+    { "type": "docs", "section": "Documentation" },
+    { "type": "perf", "section": "Performance Improvements" }
+  ],
   "packages": {
     "crates/icb-common": {
       "component": "icb-common",
