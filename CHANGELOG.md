@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/LogosITO/ICB/compare/v0.6.2...v0.7.0) (2026-05-05)
+
+
+### Features
+
+* **bench:** group benchmarks by crate, expand test sizes ([22942fb](https://github.com/LogosITO/ICB/commit/22942fb01428867677287b0f66d31c981595728e))
+
 ## [0.6.2](https://github.com/LogosITO/ICB/compare/v0.6.1...v0.6.2) (2026-05-05)
 
 
