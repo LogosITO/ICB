@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.3](https://github.com/LogosITO/ICB/compare/v0.8.2...v0.8.3) (2026-05-06)
+
+
+### Bug Fixes
+
+* empty callees/callers, optimize metrics, add elk call tree ([835f150](https://github.com/LogosITO/ICB/commit/835f1500da970e80a7cdbbaef135cd6490c2c6b9))
+
 ## [0.8.2](https://github.com/LogosITO/ICB/compare/v0.8.1...v0.8.2) (2026-05-06)
 
 
