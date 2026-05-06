@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.6](https://github.com/LogosITO/ICB/compare/v0.8.5...v0.8.6) (2026-05-06)
+
+
+### Bug Fixes
+
+* improve tree viewer rendering, edge routing, and network resilience ([725d6a4](https://github.com/LogosITO/ICB/commit/725d6a4d769c0b2a21ae6450792e58013230f3db))
+
 ## [0.8.5](https://github.com/LogosITO/ICB/compare/v0.8.4...v0.8.5) (2026-05-06)
 
 
