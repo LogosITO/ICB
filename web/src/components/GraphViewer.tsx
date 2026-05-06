@@ -1,5 +1,3 @@
-//! Interactive call graph viewer for the ICB dashboard.
-
 import { useEffect, useRef, useState } from 'react'
 import { Sigma } from 'sigma'
 import Graph from 'graphology'

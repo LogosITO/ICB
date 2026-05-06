@@ -1,9 +1,3 @@
-//! Diff viewer for the ICB dashboard.
-//!
-//! Compares two project paths (or cached graphs) and renders a colour‑coded
-//! graph showing added (green), removed (red), and unchanged (grey) nodes
-//! and edges.  Powered by sigma.js and graphology.
-
 import { useState, useRef } from 'react'
 import Sigma from 'sigma'
 import Graph from 'graphology'

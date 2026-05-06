@@ -17,31 +17,31 @@
 //!
 //! When a cache directory is provided (or the default `.icb_cache` is
 //! used), the module stores extracted facts for every source file together
-//! with a SHA‑256 hash of the file content.  On subsequent runs, files that
+//! with a SHA-256 hash of the file content.  On subsequent runs, files that
 //! have not changed are loaded directly from the cache, skipping the parser
 //! entirely.  This can reduce the analysis time for large projects from
 //! seconds to milliseconds.
 //!
 //! The incremental cache is **transparently used by both the Clang and
-//! tree‑sitter backends** – you get fast reloads regardless of the chosen
+//! tree-sitter backends** – you get fast reloads regardless of the chosen
 //! parser.
 //!
-//! # C/C++: Clang preferred, tree‑sitter fallback
+//! # C/C++: Clang preferred, tree-sitter fallback
 //!
 //! For C and C++ projects the module **prefers the Clang parser** when the
 //! `icb-clang` crate is available.  Clang provides exact semantic
 //! analysis and never mistakes documentation, HTML, or embedded JavaScript
 //! for C++ code.  If Clang cannot be loaded (e.g. LLVM not installed), the
-//! pipeline automatically falls back to tree‑sitter‑cpp.
+//! pipeline automatically falls back to tree-sitter-cpp.
 //!
-//! # Strict file extension filtering & multi‑language support
+//! # Strict file extension filtering & multi-language support
 //!
 //! For every known language, only a curated list of file extensions is
 //! accepted.  This eliminates noise from documentation, build artefacts,
 //! and web assets.  When `build_or_load_graph_multi` is called with a
 //! specific list of languages, only those extensions are scanned.
 //!
-//! # Auto‑detection of language
+//! # Auto-detection of language
 //!
 //! When `language` is `"auto"`, the module scans the project directory
 //! and picks the dominant language based on file extensions.  Unknown
@@ -83,7 +83,6 @@ impl Default for PipelineConfig {
     }
 }
 
-/// Entry point: single-language
 pub fn build_or_load_graph(
     project: &Path,
     language: &str,
@@ -109,7 +108,6 @@ pub fn build_or_load_graph(
     run_pipeline(project, cfg, graph_cache_path)
 }
 
-/// Entry point: multi-language
 pub fn build_or_load_graph_multi(
     project: &Path,
     languages: &[String],
@@ -148,13 +146,11 @@ pub fn build_or_load_graph_multi(
     run_pipeline(project, cfg, graph_cache_path)
 }
 
-/// Core pipeline executor
 fn run_pipeline(
     project: &Path,
     cfg: PipelineConfig,
     graph_cache_path: Option<&PathBuf>,
 ) -> anyhow::Result<CodePropertyGraph> {
-    // Try graph-level cache first
     if let Some(cache_file) = graph_cache_path {
         if cache_file.exists() {
             if let Ok(mut g) = cache::load_graph(cache_file) {
@@ -164,7 +160,6 @@ fn run_pipeline(
         }
     }
 
-    // --- Create incremental fact cache once, shared by all backends ---
     let inc_cache = cfg
         .inc_cache_dir
         .as_ref()
@@ -180,14 +175,13 @@ fn run_pipeline(
         .transpose()?
         .or_else(|| IncrementalCache::new(&project.join(".icb_cache")).ok());
 
-    // --- Attempt Clang with incremental caching ---
-    if cfg.languages.contains(&Language::CppTreeSitter) || cfg.languages.contains(&Language::Cpp) {
+    // FIX: removed invalid Language::Cpp
+    if cfg.languages.contains(&Language::CppTreeSitter) {
         if let Some(cpg) = try_clang_pipeline(project, &cfg, graph_cache_path, inc_cache.as_ref()) {
             return Ok(cpg);
         }
     }
 
-    // --- General pipeline (tree‑sitter) with the same incremental cache ---
     let manager = Arc::new(icb_parser::manager::ParserManager::new());
     let mut facts: Vec<(String, Vec<RawNode>)> = Vec::new();
 
@@ -233,20 +227,19 @@ fn run_pipeline(
             )?;
             facts.push((file_facts.relative_path, file_facts.facts));
         } else {
-            let raw_source = match fs::read_to_string(path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+            let raw_source = fs::read_to_string(path).unwrap_or_default();
             let source = if cfg.strip_comments {
                 strip_comments(&raw_source)
             } else {
                 raw_source
             };
+
             let file_facts =
                 match icb_parser::manager::ParserManager::new().parse_file(lang, &source) {
                     Ok(f) => f,
                     Err(_) => continue,
                 };
+
             facts.push((rel, file_facts));
         }
     }
@@ -263,27 +256,23 @@ fn run_pipeline(
                         | icb_common::NodeKind::CallSite
                 )
             })
-            .filter(|f| {
-                let name = f.name.as_deref().unwrap_or("");
-                is_valid_identifier(name, Language::CppTreeSitter)
-                    && !is_javascript_noise(name)
-                    && !is_type_keyword(name)
-            })
+            .filter(|f| !f.name.as_deref().unwrap_or("").is_empty())
             .collect();
+
         let mut local = icb_graph::builder::GraphBuilder::new();
         local.ingest_file_facts(&filtered);
         builder.merge(local);
     }
+
     builder.resolve_calls();
 
     let mut cpg = builder.cpg;
     display_name::cleanup_node_names(&mut cpg);
 
     if let Some(cache_file) = graph_cache_path {
-        if let Err(e) = cache::save_graph(&cpg, cache_file) {
-            log::warn!("Failed to save graph cache: {}", e);
-        }
+        let _ = cache::save_graph(&cpg, cache_file);
     }
+
     Ok(cpg)
 }
 

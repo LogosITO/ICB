@@ -1,12 +1,6 @@
-//! Layout component for the ICB dashboard.
-//!
-//! Provides a sidebar with navigation tabs and a single drag‑and‑drop
-//! area for ZIP files.  The language is fixed to C/C++ for optimal
-//! analysis with Clang.  Dropping a ZIP automatically starts the analysis.
-
 import { useState, useCallback } from 'react'
 
-type TabId = 'overview' | 'functions' | 'classes' | 'graph' | 'diff'
+type TabId = 'overview' | 'functions' | 'classes' | 'graph' | 'diff' | 'tree'
 
 const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: 'Overview' },
@@ -14,6 +8,7 @@ const tabs: { id: TabId; label: string }[] = [
     { id: 'classes', label: 'Classes' },
     { id: 'graph', label: 'Graph' },
     { id: 'diff', label: 'Diff' },
+    { id: 'tree', label: 'Tree' },
 ]
 
 interface Props {
@@ -36,7 +31,6 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
         const formData = new FormData()
         formData.append('zip', file)
         try {
-            // Always analyse as C/C++ (Clang preferred)
             const res = await fetch(`${BACKEND}/api/upload?languages=cpp`, {
                 method: 'POST',
                 body: formData,
@@ -78,7 +72,6 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
 
     return (
         <div style={{ display: 'flex', height: '100%' }}>
-            {/* ---- sidebar ---- */}
             <nav
                 style={{
                     display: 'flex',
@@ -132,7 +125,6 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
                 ))}
             </nav>
 
-            {/* ---- main content ---- */}
             <main
                 style={{
                     flex: 1,
@@ -142,7 +134,6 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
                 }}
             >
                 <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    {/* ----- drag-and-drop zone ----- */}
                     <div
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}

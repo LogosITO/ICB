@@ -5,8 +5,9 @@ import FunctionsTable from './components/FunctionsTable'
 import ClassesTable from './components/ClassesTable'
 import GraphViewer from './components/GraphViewer'
 import DiffViewer from './components/DiffViewer'
+import TreeViewer from './components/TreeViewer'
 
-type Tab = 'overview' | 'functions' | 'classes' | 'graph' | 'diff'
+type Tab = 'overview' | 'functions' | 'classes' | 'graph' | 'diff' | 'tree'
 
 function App() {
     const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -32,6 +33,7 @@ function App() {
                     <GraphViewer focus={focusNode} onSelectNode={setFocusNode} />
                 )}
                 {activeTab === 'diff' && <DiffViewer />}
+                {activeTab === 'tree' && <TreeViewer />}
             </FadeIn>
         </Layout>
     )

@@ -9,16 +9,17 @@
 //!
 //! # Endpoints
 //!
-//! | Method | Path | Description |
-//! |---|---|---|
-//! | GET | `/api/graph` | Subgraph filtered by kind, focus, depth, max nodes, cycle/dead highlights |
-//! | GET | `/api/node` | Detailed information about a single function |
-//! | GET | `/api/functions` | All function metrics |
-//! | GET | `/api/classes` | All class metrics |
-//! | GET | `/api/files` | Per‑file aggregate metrics |
-//! | GET | `/api/diff` | Compare two projects or cached graphs |
-//! | POST | `/api/load` | Load a new project, auto‑detecting its language |
-//! | POST | `/api/upload` | Upload a ZIP archive and analyse it |
+//! | Method | Path              | Description |
+//! |--------|-------------------|-------------|
+//! | GET    | `/api/graph`      | Subgraph filtered by kind, focus, depth, max nodes, cycle/dead highlights |
+//! | GET    | `/api/node`       | Detailed information about a single function |
+//! | GET    | `/api/functions`  | All function metrics |
+//! | GET    | `/api/classes`    | All class metrics |
+//! | GET    | `/api/files`      | Per‑file aggregate metrics |
+//! | GET    | `/api/diff`       | Compare two projects or cached graphs |
+//! | POST   | `/api/load`       | Load a new project, auto‑detecting its language |
+//! | POST   | `/api/upload`     | Upload a ZIP archive and analyse it |
+//! | GET    | `/api/call-tree`  | Call tree from a root function or forest of all roots (`*`) |
 //!
 //! # Security
 //!
@@ -30,8 +31,10 @@ use actix_web::{web, HttpResponse};
 use icb_common::NodeKind;
 use icb_graph::analysis;
 use icb_graph::graph::{CodePropertyGraph, Edge, GraphData};
-use petgraph::visit::EdgeRef;
+use petgraph::stable_graph::NodeIndex;
+use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use serde::Deserialize;
+use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use std::sync::Mutex;
@@ -51,10 +54,14 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/files", web::get().to(get_files))
             .route("/diff", web::get().to(get_diff))
             .route("/load", web::post().to(post_load))
-            .route("/upload", web::post().to(upload::handle_upload)),
+            .route("/upload", web::post().to(upload::handle_upload))
+            .route("/call-tree", web::get().to(get_call_tree)),
     );
 }
 
+// Query / Response structures ------------------------------------------------
+
+/// Parameters for the graph endpoint.
 #[derive(Deserialize)]
 struct GraphQuery {
     kind: Option<String>,
@@ -66,6 +73,7 @@ struct GraphQuery {
     entries: Option<String>,
 }
 
+/// Parameters for the diff endpoint.
 #[derive(Deserialize)]
 struct DiffQuery {
     old: String,
@@ -73,12 +81,38 @@ struct DiffQuery {
     language: Option<String>,
 }
 
+/// Payload for the load endpoint.
 #[derive(Deserialize)]
 #[allow(dead_code)]
 struct LoadRequest {
     project: String,
     languages: Option<Vec<String>>,
 }
+
+/// Parameters for the call‑tree endpoint.
+///
+/// * `root` – name of the function to use as root, or `"*"` for a forest of
+///   all top‑level functions.
+/// * `depth` – maximum expansion depth (default: 3).
+/// * `direction` – `"callees"` (default) or `"callers"`.
+#[derive(Deserialize)]
+struct CallTreeQuery {
+    root: String,
+    depth: Option<usize>,
+    direction: Option<String>,
+}
+
+/// A single node in the call tree returned to the client.
+#[derive(Serialize)]
+struct TreeNode {
+    name: String,
+    kind: String,
+    line: usize,
+    file: Option<String>,
+    children: Vec<TreeNode>,
+}
+
+// Handlers ------------------------------------------------------------------
 
 /// Return a subgraph of the main CPG, filtered by the given parameters.
 async fn get_graph(
@@ -250,13 +284,8 @@ async fn get_files(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
 async fn get_diff(query: web::Query<DiffQuery>) -> HttpResponse {
     let lang = query.language.clone().unwrap_or_else(|| "cpp".into());
 
-    let old_graph = graph_builder::build_or_load_graph(
-        Path::new(&query.old),
-        &lang,
-        None, // graph cache file
-        None, // incremental fact cache dir
-        true, // no system headers
-    );
+    let old_graph =
+        graph_builder::build_or_load_graph(Path::new(&query.old), &lang, None, None, true);
     let new_graph =
         graph_builder::build_or_load_graph(Path::new(&query.new), &lang, None, None, true);
 
@@ -275,8 +304,8 @@ async fn post_load(
     match graph_builder::build_or_load_graph_multi(
         Path::new(&body.project),
         &languages,
-        None, // graph cache file
-        None, // incremental fact cache dir
+        None,
+        None,
         true,
     ) {
         Ok(new_graph) => {
@@ -295,6 +324,102 @@ async fn post_load(
     }
 }
 
+/// Return a call tree (or forest) starting from the requested root.
+///
+/// * `root = "*"` returns a forest of all top‑level functions (those with
+///   no incoming calls).
+/// * Otherwise a single tree is built from the named function.
+async fn get_call_tree(
+    data: web::Data<Mutex<CodePropertyGraph>>,
+    query: web::Query<CallTreeQuery>,
+) -> HttpResponse {
+    let graph = data.lock().unwrap();
+    let CallTreeQuery {
+        root,
+        depth,
+        direction,
+    } = query.into_inner();
+
+    let max_depth = depth.unwrap_or(3);
+    let dir = direction.as_deref().unwrap_or("callees");
+    let reverse = dir == "callers";
+
+    if root == "*" {
+        let roots = find_root_functions(&graph);
+
+        let forest: Vec<TreeNode> = roots
+            .iter()
+            .map(|&idx| {
+                let mut visited = HashSet::new();
+                build_call_tree(&graph, idx, max_depth, reverse, &mut visited)
+            })
+            .collect();
+
+        return HttpResponse::Ok().json(forest);
+    }
+
+    let root_idx = match graph
+        .graph
+        .node_indices()
+        .find(|&idx| graph.graph[idx].name.as_deref() == Some(&root))
+    {
+        Some(idx) => idx,
+        None => {
+            let fallback = graph
+                .graph
+                .node_indices()
+                .find(|&i| graph.graph[i].kind == NodeKind::Function);
+
+            if let Some(idx) = fallback {
+                idx
+            } else {
+                return HttpResponse::NotFound().json("function not found");
+            }
+        }
+    };
+
+    let mut visited = HashSet::new();
+    let tree = build_call_tree(&graph, root_idx, max_depth, reverse, &mut visited);
+
+    HttpResponse::Ok().json(tree)
+}
+
+/// Collect every function (or class) that has no incoming [`Edge::Call`]
+/// edges – i.e. the roots of the call forest.
+fn find_root_functions(cpg: &CodePropertyGraph) -> Vec<NodeIndex> {
+    let mut has_incoming = HashSet::new();
+
+    for edge_ref in cpg.graph.edge_references() {
+        if *edge_ref.weight() == Edge::Call {
+            has_incoming.insert(edge_ref.target());
+        }
+    }
+
+    let mut roots: Vec<NodeIndex> = cpg
+        .graph
+        .node_indices()
+        .filter(|&idx| {
+            let node = &cpg.graph[idx];
+            (node.kind == NodeKind::Function || node.kind == NodeKind::Class)
+                && !has_incoming.contains(&idx)
+        })
+        .collect();
+
+    if roots.is_empty() {
+        roots = cpg
+            .graph
+            .node_indices()
+            .filter(|&idx| {
+                let node = &cpg.graph[idx];
+                node.kind == NodeKind::Function || node.kind == NodeKind::Class
+            })
+            .collect();
+    }
+
+    roots
+}
+
+/// Look up a node index by name (linear scan, used only for annotations).
 fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
     cpg.graph
         .node_indices()
@@ -303,6 +428,98 @@ fn find_node_index_by_name(cpg: &CodePropertyGraph, name: &str) -> usize {
         .unwrap_or(usize::MAX)
 }
 
+/// Recursively build a call tree from `node_idx`.
+///
+/// Traverses outgoing [`Edge::Call`] edges (or incoming when `reverse` is
+/// true).  A visited set prevents infinite recursion on cycles.
+fn build_call_tree(
+    cpg: &CodePropertyGraph,
+    node_idx: NodeIndex,
+    max_depth: usize,
+    reverse: bool,
+    visited: &mut HashSet<NodeIndex>,
+) -> TreeNode {
+    let node = &cpg.graph[node_idx];
+
+    if !visited.insert(node_idx) {
+        return TreeNode {
+            name: node.name.clone().unwrap_or_default(),
+            kind: format!("{:?}", node.kind),
+            line: node.start_line,
+            file: node.usr.clone(),
+            children: vec![],
+        };
+    }
+
+    let mut children = Vec::new();
+
+    if max_depth > 0 {
+        if reverse {
+            for edge in cpg
+                .graph
+                .edges_directed(node_idx, petgraph::Direction::Incoming)
+            {
+                if *edge.weight() == Edge::Call {
+                    children.push(build_call_tree(
+                        cpg,
+                        edge.source(),
+                        max_depth - 1,
+                        reverse,
+                        visited,
+                    ));
+                }
+            }
+        } else {
+            for edge in cpg.graph.edges(node_idx) {
+                if *edge.weight() == Edge::Call {
+                    children.push(build_call_tree(
+                        cpg,
+                        edge.target(),
+                        max_depth - 1,
+                        reverse,
+                        visited,
+                    ));
+                }
+            }
+        }
+
+        if children.is_empty() && max_depth > 1 {
+            for edge in cpg.graph.edges(node_idx) {
+                if let Some(edge_target) = edge.target().index().checked_sub(0) {
+                    let idx = petgraph::stable_graph::NodeIndex::new(edge_target);
+
+                    let n = &cpg.graph[idx];
+
+                    if n.kind == NodeKind::Function || n.kind == NodeKind::Class {
+                        children.push(TreeNode {
+                            name: n.name.clone().unwrap_or_default(),
+                            kind: format!("{:?}", n.kind),
+                            line: n.start_line,
+                            file: n.usr.clone(),
+                            children: vec![],
+                        });
+
+                        if children.len() >= 5 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    visited.remove(&node_idx);
+
+    TreeNode {
+        name: node.name.clone().unwrap_or_default(),
+        kind: format!("{:?}", node.kind),
+        line: node.start_line,
+        file: node.usr.clone(),
+        children,
+    }
+}
+
+/// Build a subgraph centred on a specific function.
 fn focal_graph(
     cpg: &CodePropertyGraph,
     func_name: &str,
@@ -401,6 +618,7 @@ fn focal_graph(
     }
 }
 
+/// Build a subgraph limited to nodes of a given kind.
 fn subgraph_by_kind(cpg: &CodePropertyGraph, kind: Option<&str>, max_nodes: usize) -> GraphData {
     let target_kind = match kind {
         Some("Function") => Some(NodeKind::Function),
