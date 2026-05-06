@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.4](https://github.com/LogosITO/ICB/compare/v0.8.3...v0.8.4) (2026-05-06)
+
+
+### Bug Fixes
+
+* Deleted GraphViewer (switched GraphViewer to TreeViewer) ([9d36e1a](https://github.com/LogosITO/ICB/commit/9d36e1a9f0bf9fd98ee246221f4e653ca1b305c8))
+
 ## [0.8.3](https://github.com/LogosITO/ICB/compare/v0.8.2...v0.8.3) (2026-05-06)
 
 
