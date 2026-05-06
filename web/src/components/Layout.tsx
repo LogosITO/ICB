@@ -132,35 +132,37 @@ export default function Layout({ activeTab, onTabChange, children }: Props) {
                     background: 'var(--bg)',
                 }}
             >
-                <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                    <div
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onDrop={handleDrop}
-                        style={{
-                            border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`,
-                            borderRadius: '8px',
-                            padding: '32px',
-                            textAlign: 'center',
-                            color: 'var(--text-secondary)',
-                            transition: 'border-color 0.2s',
-                            cursor: 'pointer',
-                            background: dragOver ? 'var(--surface-hover)' : 'transparent',
-                        }}
-                    >
-                        {uploading
-                            ? 'Analyzing…'
-                            : dragOver
-                                ? 'Drop your ZIP here'
-                                : 'Drop a C/C++ project ZIP here'}
-                    </div>
+                {activeTab === 'overview' && (
+                    <div style={{ marginBottom: '24px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                        <div
+                            onDragOver={handleDragOver}
+                            onDragLeave={handleDragLeave}
+                            onDrop={handleDrop}
+                            style={{
+                                border: `2px dashed ${dragOver ? 'var(--accent)' : 'var(--border)'}`,
+                                borderRadius: '8px',
+                                padding: '32px',
+                                textAlign: 'center',
+                                color: 'var(--text-secondary)',
+                                transition: 'border-color 0.2s',
+                                cursor: 'pointer',
+                                background: dragOver ? 'var(--surface-hover)' : 'transparent',
+                            }}
+                        >
+                            {uploading
+                                ? 'Analyzing…'
+                                : dragOver
+                                    ? 'Drop your ZIP here'
+                                    : 'Drop a C/C++ project ZIP here'}
+                        </div>
 
-                    {message && (
-                        <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
-                            {message}
-                        </span>
-                    )}
-                </div>
+                        {message && (
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                {message}
+                            </span>
+                        )}
+                    </div>
+                )}
 
                 {children}
             </main>
