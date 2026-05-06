@@ -31,6 +31,7 @@ interface ElkEdge {
 const elk = new ELK()
 const TREE_DEPTH = 10
 const HOVER_DELAY = 200
+const FETCH_TIMEOUT = 45_000
 
 const CHAIN_COLORS = [
     '#8ab4f8', '#f28b82', '#81c995', '#fdd663', '#c58af9',
@@ -49,7 +50,11 @@ function buildGraph(data: TreeNode | TreeNode[]) {
         const id = getId(node)
         if (!nodesMap.has(id)) nodesMap.set(id, node)
         node.children?.forEach(child => {
-            edges.push({ from: id, to: getId(child) })
+            const childId = getId(child)
+            // игнорируем self‑edges
+            if (id !== childId) {
+                edges.push({ from: id, to: childId })
+            }
             walk(child)
         })
     }
@@ -111,13 +116,28 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
     const isDragging = useRef(false)
     const lastPos = useRef({ x: 0, y: 0 })
     const hoverTimer = useRef<number | null>(null)
+    const abortControllerRef = useRef<AbortController | null>(null)
     const rootInput = focus || '*'
 
     const fetchAndLayout = useCallback(async () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort()
+        }
+
+        const controller = new AbortController()
+        abortControllerRef.current = controller
+
         setLoading(true)
         setError(null)
+
+        const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
+
         try {
-            const resp = await fetch(buildUrl(rootInput))
+            const resp = await fetch(buildUrl(rootInput), {
+                signal: controller.signal,
+            })
+            clearTimeout(timeout)
+
             if (!resp.ok) throw new Error(await resp.text())
             const data = await resp.json()
 
@@ -133,11 +153,14 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                 chainId: chainMap.get(n.id) ?? -1,
             }))
 
-            const elkEdges: ElkEdge[] = edges.map((e, i) => ({
-                id: `${e.from}->${e.to}-${i}`,
-                sources: [e.from],
-                targets: [e.to],
-            }))
+            // отфильтровываем self‑edges ещё и на уровне ELK (хотя buildGraph тоже фильтрует)
+            const elkEdges: ElkEdge[] = edges
+                .filter(e => e.from !== e.to)
+                .map((e, i) => ({
+                    id: `${e.from}->${e.to}-${i}`,
+                    sources: [e.from],
+                    targets: [e.to],
+                }))
 
             const graph = {
                 id: 'root',
@@ -159,14 +182,29 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
             })
             setCollapsed(new Set())
         } catch (e: any) {
-            setError(e.message)
+            clearTimeout(timeout)
+            if (e.name === 'AbortError') {
+                setError('Request timed out. Server may be down.')
+            } else {
+                setError(e.message || 'Unknown error')
+            }
         } finally {
+            if (abortControllerRef.current === controller) {
+                abortControllerRef.current = null
+            }
             setLoading(false)
         }
     }, [rootInput])
 
     useEffect(() => {
         fetchAndLayout()
+        return () => {
+            if (abortControllerRef.current) {
+                abortControllerRef.current.abort()
+                abortControllerRef.current = null
+            }
+            setLoading(false)
+        }
     }, [fetchAndLayout])
 
     const onChainMouseEnter = useCallback((chainId: number) => {
@@ -228,6 +266,11 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         })
     }
 
+    const resetView = () => {
+        setScale(1)
+        setOffset({ x: 0, y: 0 })
+    }
+
     const isNodeVisible = (nodeId: string): boolean => {
         let current = nodeId
         while (current) {
@@ -239,8 +282,35 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         return true
     }
 
-    if (loading) return <div style={{ color: '#888', padding: 20 }}>Loading...</div>
-    if (error) return <div style={{ color: '#c44', padding: 20 }}>{error}</div>
+    if (loading) {
+        return (
+            <div style={{ padding: 20, color: '#888' }}>
+                Loading call tree...
+            </div>
+        )
+    }
+
+    if (error) {
+        return (
+            <div style={{ padding: 20, color: '#c44' }}>
+                <p>Error: {error}</p>
+                <button
+                    onClick={fetchAndLayout}
+                    style={{
+                        background: '#333',
+                        border: '1px solid #555',
+                        color: '#ccc',
+                        padding: '4px 12px',
+                        borderRadius: 4,
+                        cursor: 'pointer',
+                    }}
+                >
+                    Retry
+                </button>
+            </div>
+        )
+    }
+
     if (!layout) return null
 
     const visibleNodes = layout.children?.filter(n => isNodeVisible(n.id!)) || []
@@ -252,22 +322,36 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         ? visibleNodes.filter(n => n.data.name.toLowerCase().includes(search.toLowerCase()))
         : []
 
-    const edgePoints = (edge: ElkEdge) => {
+    const edgeIndexMap = new Map<string, number>()
+    const targetIndexMap = new Map<string, number>()
+
+    const getPortY = (node: ElkNode, portIndex: number): number => {
+        const padding = 14
+        const usableHeight = node.height - padding * 2
+        const ports = 3
+        const step = usableHeight / (ports - 1)
+        return node.y! + padding + step * portIndex
+    }
+
+    const edgePoints = (edge: ElkEdge, srcIdx: number, tgtIdx: number) => {
         const source = layout.children?.find(n => n.id === edge.sources[0])
         const target = layout.children?.find(n => n.id === edge.targets[0])
         if (!source || !target || source.x === undefined || source.y === undefined ||
             target.x === undefined || target.y === undefined) {
             return { sx: 0, sy: 0, tx: 0, ty: 0 }
         }
+        const srcPort = srcIdx % 3
+        const tgtPort = tgtIdx % 3
+        const sy = getPortY(source, srcPort)
+        const ty = getPortY(target, tgtPort)
         const sx = source.x + source.width
-        const sy = source.y + source.height / 2
         const tx = target.x
-        const ty = target.y + target.height / 2
         return { sx, sy, tx, ty }
     }
 
     return (
         <div style={{ width: '100%', height: '90vh', background: '#0b0f14', overflow: 'hidden', position: 'relative' }}>
+            {/* Панель управления */}
             <div style={{
                 position: 'absolute', top: 10, left: 10, zIndex: 10,
                 display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'
@@ -304,8 +388,35 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                         ))}
                     </select>
                 )}
+                <button
+                    onClick={resetView}
+                    title="Reset zoom and pan"
+                    style={{
+                        background: '#333', border: '1px solid #555', color: '#ccc',
+                        padding: '4px 12px', borderRadius: 4, cursor: 'pointer',
+                        fontSize: '0.85rem'
+                    }}
+                >
+                    Reset view
+                </button>
             </div>
 
+            {/* Легенда цепочек */}
+            <div style={{
+                position: 'absolute', top: 50, left: 10, zIndex: 10,
+                display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
+                background: 'rgba(18,24,32,0.9)', padding: '4px 8px',
+                borderRadius: 4, border: '1px solid #444'
+            }}>
+                {CHAIN_COLORS.map((color, i) => (
+                    <div key={color} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+                        <div style={{ width: 12, height: 12, background: color, borderRadius: 2 }} />
+                        <span style={{ fontSize: '0.7rem', color: '#888' }}>{i + 1}</span>
+                    </div>
+                ))}
+            </div>
+
+            {/* Холст */}
             <div
                 style={{ width: '100%', height: '100%', cursor: 'grab' }}
                 onWheel={handleWheel}
@@ -331,31 +442,7 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                         ))}
                     </defs>
                     <g transform={`translate(${offset.x},${offset.y}) scale(${scale})`}>
-                        {visibleEdges.map(edge => {
-                            const chainId = layout.chainMap.get(edge.sources[0]) ?? -1
-                            const color = CHAIN_COLORS[chainId % CHAIN_COLORS.length]
-                            const isHovered = actualHoverChain === chainId
-                            const opacity = actualHoverChain === null ? 1 : (isHovered ? 1 : 0.08)
-                            const { sx, sy, tx, ty } = edgePoints(edge)
-
-                            return (
-                                <line
-                                    key={edge.id}
-                                    x1={sx}
-                                    y1={sy}
-                                    x2={tx}
-                                    y2={ty}
-                                    stroke={color}
-                                    strokeOpacity={opacity}
-                                    strokeWidth={2}
-                                    markerEnd={`url(#arrow-${chainId % CHAIN_COLORS.length})`}
-                                    style={{ transition: 'stroke-opacity 0.3s' }}
-                                    onMouseEnter={() => onChainMouseEnter(chainId)}
-                                    onMouseLeave={onChainMouseLeave}
-                                />
-                            )
-                        })}
-
+                        {/* Узлы раньше рёбер */}
                         {visibleNodes.map(node => {
                             const chainId = node.chainId ?? -1
                             const color = CHAIN_COLORS[chainId % CHAIN_COLORS.length]
@@ -387,6 +474,7 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                                         onClick={(e) => {
                                             e.stopPropagation()
                                             toggleCollapse(node.id!)
+                                            setSelectedNodeId(node.id!)
                                         }}
                                     />
                                     <text
@@ -411,8 +499,54 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                                 </g>
                             )
                         })}
+
+                        {/* Рёбра поверх узлов */}
+                        {visibleEdges.map(edge => {
+                            const srcId = edge.sources[0]
+                            const tgtId = edge.targets[0]
+
+                            const srcIdx = (edgeIndexMap.get(srcId) ?? 0) + 1
+                            edgeIndexMap.set(srcId, srcIdx)
+
+                            const tgtIdx = (targetIndexMap.get(tgtId) ?? 0) + 1
+                            targetIndexMap.set(tgtId, tgtIdx)
+
+                            const chainId = layout.chainMap.get(srcId) ?? -1
+                            const color = CHAIN_COLORS[chainId % CHAIN_COLORS.length]
+                            const isHovered = actualHoverChain === chainId
+                            const opacity = actualHoverChain === null ? 1 : (isHovered ? 1 : 0.08)
+                            const { sx, sy, tx, ty } = edgePoints(edge, srcIdx - 1, tgtIdx - 1)
+
+                            const dx = tx - sx
+                            const cx1 = sx + dx * 0.4
+                            const cx2 = tx - dx * 0.4
+
+                            return (
+                                <path
+                                    key={edge.id}
+                                    d={`M ${sx},${sy} C ${cx1},${sy} ${cx2},${ty} ${tx},${ty}`}
+                                    stroke={color}
+                                    strokeOpacity={opacity}
+                                    strokeWidth={2}
+                                    fill="none"
+                                    markerEnd={`url(#arrow-${chainId % CHAIN_COLORS.length})`}
+                                    style={{ transition: 'stroke-opacity 0.3s' }}
+                                    onMouseEnter={() => onChainMouseEnter(chainId)}
+                                    onMouseLeave={onChainMouseLeave}
+                                />
+                            )
+                        })}
                     </g>
                 </svg>
+            </div>
+
+            {/* Индикатор количества */}
+            <div style={{
+                position: 'absolute', bottom: 10, left: 10, zIndex: 10,
+                color: '#666', fontSize: '0.75rem', fontFamily: 'monospace',
+                background: 'rgba(18,24,32,0.8)', padding: '2px 8px', borderRadius: 4
+            }}>
+                {visibleNodes.length} nodes / {visibleEdges.length} edges
             </div>
         </div>
     )
