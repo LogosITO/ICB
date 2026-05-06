@@ -37,8 +37,8 @@ const CHAIN_COLORS = [
     '#ff8a65', '#4db6ac', '#e0e0e0',
 ]
 
-const buildUrl = (root: string, direction: 'callees' | 'callers') =>
-    `/api/call-tree?root=${encodeURIComponent(root)}&depth=${TREE_DEPTH}&direction=${direction}`
+const buildUrl = (root: string) =>
+    `/api/call-tree?root=${encodeURIComponent(root)}&depth=${TREE_DEPTH}&direction=callees`
 
 function buildGraph(data: TreeNode | TreeNode[]) {
     const nodesMap = new Map<string, TreeNode>()
@@ -101,7 +101,6 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
     const [hoverChain, setHoverChain] = useState<number | null>(null)
     const [actualHoverChain, setActualHoverChain] = useState<number | null>(null)
     const [search, setSearch] = useState('')
-    const [direction, setDirection] = useState<'callees' | 'callers'>('callees')
     const [scale, setScale] = useState(1)
     const [offset, setOffset] = useState({ x: 0, y: 0 })
     const [loading, setLoading] = useState(false)
@@ -118,7 +117,7 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         setLoading(true)
         setError(null)
         try {
-            const resp = await fetch(buildUrl(rootInput, direction))
+            const resp = await fetch(buildUrl(rootInput))
             if (!resp.ok) throw new Error(await resp.text())
             const data = await resp.json()
 
@@ -164,7 +163,7 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         } finally {
             setLoading(false)
         }
-    }, [rootInput, direction])
+    }, [rootInput])
 
     useEffect(() => {
         fetchAndLayout()
@@ -253,6 +252,20 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         ? visibleNodes.filter(n => n.data.name.toLowerCase().includes(search.toLowerCase()))
         : []
 
+    const edgePoints = (edge: ElkEdge) => {
+        const source = layout.children?.find(n => n.id === edge.sources[0])
+        const target = layout.children?.find(n => n.id === edge.targets[0])
+        if (!source || !target || source.x === undefined || source.y === undefined ||
+            target.x === undefined || target.y === undefined) {
+            return { sx: 0, sy: 0, tx: 0, ty: 0 }
+        }
+        const sx = source.x + source.width
+        const sy = source.y + source.height / 2
+        const tx = target.x
+        const ty = target.y + target.height / 2
+        return { sx, sy, tx, ty }
+    }
+
     return (
         <div style={{ width: '100%', height: '90vh', background: '#0b0f14', overflow: 'hidden', position: 'relative' }}>
             <div style={{
@@ -291,17 +304,6 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                         ))}
                     </select>
                 )}
-                <select
-                    value={direction}
-                    onChange={e => setDirection(e.target.value as 'callees' | 'callers')}
-                    style={{
-                        background: '#1e1e2e', border: '1px solid #444', color: '#ccc',
-                        padding: '4px 8px', borderRadius: 4
-                    }}
-                >
-                    <option value="callees">Callees</option>
-                    <option value="callers">Callers</option>
-                </select>
             </div>
 
             <div
@@ -312,24 +314,41 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                 onMouseUp={handleMouseUp}
             >
                 <svg ref={svgRef} width="100%" height="100%">
+                    <defs>
+                        {CHAIN_COLORS.map((color, i) => (
+                            <marker
+                                key={`arrow-${i}`}
+                                id={`arrow-${i}`}
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto"
+                            >
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill={color} opacity="0.8" />
+                            </marker>
+                        ))}
+                    </defs>
                     <g transform={`translate(${offset.x},${offset.y}) scale(${scale})`}>
                         {visibleEdges.map(edge => {
                             const chainId = layout.chainMap.get(edge.sources[0]) ?? -1
                             const color = CHAIN_COLORS[chainId % CHAIN_COLORS.length]
                             const isHovered = actualHoverChain === chainId
                             const opacity = actualHoverChain === null ? 1 : (isHovered ? 1 : 0.08)
-
-                            const start = edge.sections?.[0]?.startPoint ?? { x: 0, y: 0 }
-                            const end = edge.sections?.[0]?.endPoint ?? { x: 0, y: 0 }
+                            const { sx, sy, tx, ty } = edgePoints(edge)
 
                             return (
-                                <path
+                                <line
                                     key={edge.id}
-                                    d={`M ${start.x},${start.y} C ${start.x + 80},${start.y} ${end.x - 80},${end.y} ${end.x},${end.y}`}
+                                    x1={sx}
+                                    y1={sy}
+                                    x2={tx}
+                                    y2={ty}
                                     stroke={color}
                                     strokeOpacity={opacity}
                                     strokeWidth={2}
-                                    fill="none"
+                                    markerEnd={`url(#arrow-${chainId % CHAIN_COLORS.length})`}
                                     style={{ transition: 'stroke-opacity 0.3s' }}
                                     onMouseEnter={() => onChainMouseEnter(chainId)}
                                     onMouseLeave={onChainMouseLeave}
@@ -343,6 +362,8 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                             const isHovered = actualHoverChain === chainId
                             const opacity = actualHoverChain === null ? 1 : (isHovered ? 1 : 0.2)
                             const isCollapsed = collapsed.has(node.id!)
+                            const isClass = node.data.kind === 'Class'
+                            const rectRx = isClass ? 4 : 10
 
                             return (
                                 <g
@@ -358,7 +379,7 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                                     <rect
                                         width={node.width}
                                         height={node.height}
-                                        rx={10}
+                                        rx={rectRx}
                                         fill="#121820"
                                         stroke={color}
                                         strokeWidth={selectedNodeId === node.id ? 3 : 2}

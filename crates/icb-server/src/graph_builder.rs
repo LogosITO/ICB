@@ -17,31 +17,31 @@
 //!
 //! When a cache directory is provided (or the default `.icb_cache` is
 //! used), the module stores extracted facts for every source file together
-//! with a SHA-256 hash of the file content.  On subsequent runs, files that
+//! with a SHA‑256 hash of the file content.  On subsequent runs, files that
 //! have not changed are loaded directly from the cache, skipping the parser
 //! entirely.  This can reduce the analysis time for large projects from
 //! seconds to milliseconds.
 //!
 //! The incremental cache is **transparently used by both the Clang and
-//! tree-sitter backends** – you get fast reloads regardless of the chosen
+//! tree‑sitter backends** – you get fast reloads regardless of the chosen
 //! parser.
 //!
-//! # C/C++: Clang preferred, tree-sitter fallback
+//! # C/C++: Clang preferred, tree‑sitter fallback
 //!
 //! For C and C++ projects the module **prefers the Clang parser** when the
 //! `icb-clang` crate is available.  Clang provides exact semantic
 //! analysis and never mistakes documentation, HTML, or embedded JavaScript
 //! for C++ code.  If Clang cannot be loaded (e.g. LLVM not installed), the
-//! pipeline automatically falls back to tree-sitter-cpp.
+//! pipeline automatically falls back to tree‑sitter‑cpp.
 //!
-//! # Strict file extension filtering & multi-language support
+//! # Strict file extension filtering & multi‑language support
 //!
 //! For every known language, only a curated list of file extensions is
 //! accepted.  This eliminates noise from documentation, build artefacts,
 //! and web assets.  When `build_or_load_graph_multi` is called with a
 //! specific list of languages, only those extensions are scanned.
 //!
-//! # Auto-detection of language
+//! # Auto‑detection of language
 //!
 //! When `language` is `"auto"`, the module scans the project directory
 //! and picks the dominant language based on file extensions.  Unknown
@@ -83,6 +83,7 @@ impl Default for PipelineConfig {
     }
 }
 
+/// Entry point: single-language
 pub fn build_or_load_graph(
     project: &Path,
     language: &str,
@@ -108,6 +109,7 @@ pub fn build_or_load_graph(
     run_pipeline(project, cfg, graph_cache_path)
 }
 
+/// Entry point: multi-language
 pub fn build_or_load_graph_multi(
     project: &Path,
     languages: &[String],
@@ -146,6 +148,7 @@ pub fn build_or_load_graph_multi(
     run_pipeline(project, cfg, graph_cache_path)
 }
 
+/// Core pipeline executor
 fn run_pipeline(
     project: &Path,
     cfg: PipelineConfig,
@@ -175,7 +178,6 @@ fn run_pipeline(
         .transpose()?
         .or_else(|| IncrementalCache::new(&project.join(".icb_cache")).ok());
 
-    // FIX: removed invalid Language::Cpp
     if cfg.languages.contains(&Language::CppTreeSitter) {
         if let Some(cpg) = try_clang_pipeline(project, &cfg, graph_cache_path, inc_cache.as_ref()) {
             return Ok(cpg);
@@ -246,24 +248,12 @@ fn run_pipeline(
 
     let mut builder = icb_graph::builder::GraphBuilder::new();
     for (_, file_facts) in facts {
-        let filtered: Vec<_> = file_facts
-            .into_iter()
-            .filter(|f| {
-                matches!(
-                    f.kind,
-                    icb_common::NodeKind::Function
-                        | icb_common::NodeKind::Class
-                        | icb_common::NodeKind::CallSite
-                )
-            })
-            .filter(|f| !f.name.as_deref().unwrap_or("").is_empty())
-            .collect();
-
         let mut local = icb_graph::builder::GraphBuilder::new();
-        local.ingest_file_facts(&filtered);
+        local.ingest_file_facts(&file_facts);
         builder.merge(local);
     }
 
+    display_name::cleanup_node_names(&mut builder.cpg);
     builder.resolve_calls();
 
     let mut cpg = builder.cpg;
@@ -297,7 +287,6 @@ fn try_clang_pipeline(
             let path = entry.path();
             let ext = path.extension().and_then(|s| s.to_str()).unwrap_or("");
 
-            // Only C++ extensions
             let allowed = extensions_for_language(Language::CppTreeSitter);
             if !allowed.contains(&ext) {
                 continue;
@@ -343,30 +332,16 @@ fn try_clang_pipeline(
 
         let mut builder = icb_graph::builder::GraphBuilder::new();
         for (_, file_facts) in facts {
-            let filtered: Vec<_> = file_facts
-                .into_iter()
-                .filter(|f| {
-                    matches!(
-                        f.kind,
-                        icb_common::NodeKind::Function
-                            | icb_common::NodeKind::Class
-                            | icb_common::NodeKind::CallSite
-                    )
-                })
-                .filter(|f| {
-                    let name = f.name.as_deref().unwrap_or("");
-                    is_valid_identifier(name, Language::CppTreeSitter)
-                        && !is_javascript_noise(name)
-                        && !is_type_keyword(name)
-                })
-                .collect();
             let mut local = icb_graph::builder::GraphBuilder::new();
-            local.ingest_file_facts(&filtered);
+            local.ingest_file_facts(&file_facts);
             builder.merge(local);
         }
+
+        display_name::cleanup_node_names(&mut builder.cpg);
         builder.resolve_calls();
         let mut cpg = builder.cpg;
         display_name::cleanup_node_names(&mut cpg);
+
         if let Some(cache_file) = graph_cache_path {
             let _ = cache::save_graph(&cpg, cache_file);
         }
@@ -445,6 +420,7 @@ fn strip_comments(s: &str) -> String {
     s.replace("//", " ").replace("/*", " ").replace("*/", " ")
 }
 
+#[allow(dead_code)]
 fn is_valid_identifier(name: &str, lang: Language) -> bool {
     if matches!(lang, Language::CppTreeSitter | Language::Cpp) && name.contains("::") {
         return true;
@@ -488,6 +464,7 @@ fn is_valid_identifier(name: &str, lang: Language) -> bool {
     true
 }
 
+#[allow(dead_code)]
 fn is_javascript_noise(name: &str) -> bool {
     static JS_NOISE: &[&str] = &[
         "isNaN",
@@ -625,6 +602,7 @@ fn is_javascript_noise(name: &str) -> bool {
     JS_NOISE.contains(&name)
 }
 
+#[allow(dead_code)]
 fn is_type_keyword(name: &str) -> bool {
     matches!(
         name,
