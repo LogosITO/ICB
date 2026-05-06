@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/LogosITO/ICB/compare/v0.8.0...v0.8.1) (2026-05-06)
+
+
+### Bug Fixes
+
+* tree view with ELK layout, stable IDs and chain coloring ([6e01b7f](https://github.com/LogosITO/ICB/commit/6e01b7f3ee8ad36eae9f6d68d5cbfa379772588b))
+
 ## [0.8.0](https://github.com/LogosITO/ICB/compare/v0.7.2...v0.8.0) (2026-05-06)
 
 
