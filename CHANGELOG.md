@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/LogosITO/ICB/compare/v0.8.1...v0.8.2) (2026-05-06)
+
+
+### Bug Fixes
+
+* remove collapse/expand buttons, keep debounced hover and search in TreeViewer ([ef026c6](https://github.com/LogosITO/ICB/commit/ef026c6784b21caae44360f3b2cb75c7df2c1c94))
+
 ## [0.8.1](https://github.com/LogosITO/ICB/compare/v0.8.0...v0.8.1) (2026-05-06)
 
 
