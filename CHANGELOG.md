@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.5](https://github.com/LogosITO/ICB/compare/v0.8.4...v0.8.5) (2026-05-06)
+
+
+### Bug Fixes
+
+* drag-n-drop field fixed in Overview tab ([920ae3c](https://github.com/LogosITO/ICB/commit/920ae3c43aba6b80de7c2dac19e29dc206e5400c))
+
 ## [0.8.4](https://github.com/LogosITO/ICB/compare/v0.8.3...v0.8.4) (2026-05-06)
 
 
