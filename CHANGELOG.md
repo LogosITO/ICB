@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/LogosITO/ICB/compare/v0.7.2...v0.8.0) (2026-05-06)
+
+
+### Features
+
+* add tree visualization, removing graph explosion fallback and adding safety limits ([a275ddc](https://github.com/LogosITO/ICB/commit/a275ddcd13164434ecdff9213178c3025d974a80))
+
 ## [0.7.2](https://github.com/LogosITO/ICB/compare/v0.7.1...v0.7.2) (2026-05-05)
 
 
