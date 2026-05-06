@@ -1,14 +1,13 @@
 import { useState, useCallback } from 'react'
 
-type TabId = 'overview' | 'functions' | 'classes' | 'graph' | 'diff' | 'tree'
+type TabId = 'overview' | 'functions' | 'classes' | 'tree' | 'diff'
 
 const tabs: { id: TabId; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'functions', label: 'Functions' },
     { id: 'classes', label: 'Classes' },
-    { id: 'graph', label: 'Graph' },
-    { id: 'diff', label: 'Diff' },
     { id: 'tree', label: 'Tree' },
+    { id: 'diff', label: 'Diff' },
 ]
 
 interface Props {
