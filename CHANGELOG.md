@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.7](https://github.com/LogosITO/ICB/compare/v0.8.6...v0.8.7) (2026-05-07)
+
+
+### Bug Fixes
+
+* **parser:** add Rust parser using tree-sitter-rust ([2c80da2](https://github.com/LogosITO/ICB/commit/2c80da206a7ebcb48bff1d27684eb91b17d1a29b))
+
 ## [0.8.6](https://github.com/LogosITO/ICB/compare/v0.8.5...v0.8.6) (2026-05-06)
 
 
