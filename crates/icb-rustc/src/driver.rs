@@ -32,8 +32,7 @@ mod nightly_impl {
                 |compiler| {
                     let tcx = compiler.tcx();
                     let hir_map = tcx.hir();
-                    crate::visitor::collect_facts(tcx, hir_map)
-                        .map_err(|e| anyhow!("{}", e))
+                    crate::visitor::collect_facts(tcx, hir_map).map_err(|e| anyhow!("{}", e))
                 },
             )
         }));
