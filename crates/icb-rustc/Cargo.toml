@@ -1,0 +1,15 @@
+[package]
+name = "icb-rustc"
+version = "0.8.7"
+edition = "2021"
+description = "Native Rust analysis backend using rustc_interface"
+
+[dependencies]
+icb-common = { path = "../icb-common" }
+icb-parser = { path = "../icb-parser" }
+anyhow = "1.0"
+log = "0.4"
+
+[features]
+default = []
+nightly = []
