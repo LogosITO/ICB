@@ -74,8 +74,9 @@ impl ParserManager {
             Language::CppTreeSitter => crate::cpp_tree_sitter::parse_cpp_file(source),
             Language::Go => crate::lang::go::parse_go(source),
             Language::Ruby => crate::lang::ruby::parse_ruby(source),
+            Language::Rust => crate::lang::rust::parse_rust(source),
 
-            Language::JavaScript | Language::Rust | Language::Unknown => {
+            Language::JavaScript | Language::Unknown => {
                 Ok(crate::heuristic_parser::parse_universal(source, ""))
             }
 

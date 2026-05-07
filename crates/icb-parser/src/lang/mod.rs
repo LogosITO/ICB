@@ -7,3 +7,4 @@ pub mod common;
 pub mod go;
 pub mod python;
 pub mod ruby;
+pub mod rust;
