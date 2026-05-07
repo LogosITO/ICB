@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.9](https://github.com/LogosITO/ICB/compare/v0.8.8...v0.8.9) (2026-05-07)
+
+
+### Bug Fixes
+
+* cargo format for rust ([ac2b40e](https://github.com/LogosITO/ICB/commit/ac2b40eff52da1dadf7f1861dcad0282d82e712b))
+
 ## [0.8.8](https://github.com/LogosITO/ICB/compare/v0.8.7...v0.8.8) (2026-05-07)
 
 
