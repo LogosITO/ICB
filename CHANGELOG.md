@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.8](https://github.com/LogosITO/ICB/compare/v0.8.7...v0.8.8) (2026-05-07)
+
+
+### Bug Fixes
+
+* index.html for docs ([ae1b78f](https://github.com/LogosITO/ICB/commit/ae1b78f17310a59b3b2f788abe9e02f827a5ad2f))
+
 ## [0.8.7](https://github.com/LogosITO/ICB/compare/v0.8.6...v0.8.7) (2026-05-07)
 
 
