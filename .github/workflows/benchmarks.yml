@@ -8,6 +8,7 @@ on:
       - 'crates/icb-clang/**'
       - 'crates/icb-graph/**'
       - 'crates/icb-parser/**'
+      - 'crates/icb-rustc/**'
       - 'benches/**'
       - 'scripts/generate-bench-json/**'
       - '.github/workflows/benchmarks.yml'
@@ -17,6 +18,7 @@ on:
       - 'crates/icb-clang/**'
       - 'crates/icb-graph/**'
       - 'crates/icb-parser/**'
+      - 'crates/icb-rustc/**'
       - 'benches/**'
       - 'scripts/generate-bench-json/**'
       - '.github/workflows/benchmarks.yml'
@@ -105,9 +107,31 @@ jobs:
           name: bench-ts
           path: bench_ts.txt
 
+  bench-rustc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: nightly
+          components: rustc-dev,llvm-tools-preview
+      - name: Run rustc benchmarks
+        env:
+          RUSTC_BOOTSTRAP: 1
+        run: |
+          cargo bench -p icb-rustc-benchmarks          \
+            --bench single_large_file                   \
+            --bench deeply_nested                       \
+            --bench many_calls                          \
+            -- --output-format bencher | tee bench_rustc.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-rustc
+          path: bench_rustc.txt
+
   publish-results:
     if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    needs: [bench-clang, bench-graph, bench-server, bench-parser-ts]
+    needs: [bench-clang, bench-graph, bench-server, bench-parser-ts, bench-rustc]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -127,6 +151,7 @@ jobs:
             artifacts/bench-graph/bench_graph.txt \
             artifacts/bench-server/bench_server.txt \
             artifacts/bench-ts/bench_ts.txt \
+            artifacts/bench-rustc/bench_rustc.txt \
             > docs/bench-data/latest.json
       - name: Commit and push
         run: |

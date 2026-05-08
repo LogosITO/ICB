@@ -1,18 +1,16 @@
 [package]
-name = "icb-parser-benchmarks"
+name = "icb-rustc-benchmarks"
 version = "0.8.9"
 edition = "2021"
 publish = false
 
+[dependencies]
+icb-rustc = { path = "../../crates/icb-rustc" }
+criterion = { version = "0.8.2", features = ["html_reports"] }
+tempfile = "3"
+
 [lib]
 path = "src/lib.rs"
-
-[dependencies]
-icb-parser = { path = "../../crates/icb-parser" }
-icb-common = { path = "../../crates/icb-common" }
-
-[dev-dependencies]
-criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [[bench]]
 name = "single_large_file"
@@ -28,8 +26,3 @@ path = "deeply_nested.rs"
 name = "many_calls"
 harness = false
 path = "many_calls.rs"
-
-[[bench]]
-name = "real_project"
-harness = false
-path = "real_project.rs"

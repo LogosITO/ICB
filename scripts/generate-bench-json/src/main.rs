@@ -10,7 +10,6 @@ fn main() -> anyhow::Result<()> {
         anyhow::bail!("Usage: {} <file1> [file2 ...]", args[0]);
     }
 
-    // Структура: crate → scenario → backend → время (нс)
     let mut crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>> = BTreeMap::new();
 
     for path in &args[1..] {
@@ -68,9 +67,8 @@ fn parse_bencher_line(line: &str) -> Option<(String, f64)> {
     Some((name, ns))
 }
 
-/// Возвращает (имя крейта, сценарий, бэкенд)
 fn classify(name: &str) -> (String, String, String) {
-    // ── icb-clang ──
+    // icb-clang
     if name.starts_with("single_large_file") {
         return (
             "icb-clang".into(),
@@ -93,7 +91,7 @@ fn classify(name: &str) -> (String, String, String) {
         return ("icb-clang".into(), "System Headers".into(), backend.into());
     }
 
-    // ── icb-graph ──
+    // icb-graph
     if name.starts_with("build_graph") {
         return ("icb-graph".into(), "Graph Build".into(), "graph".into());
     }
@@ -104,8 +102,8 @@ fn classify(name: &str) -> (String, String, String) {
         return ("icb-graph".into(), "Full Analysis".into(), "graph".into());
     }
 
-    // ── icb-server ──
-    if name.starts_with("analytics_metric")      // analytics_metrics_100_functions etc.
+    // icb-server
+    if name.starts_with("analytics_metric")
         || name.starts_with("function_metrics")
         || name.starts_with("class_metrics")
         || name.starts_with("file_metrics")
@@ -134,9 +132,8 @@ fn classify(name: &str) -> (String, String, String) {
         );
     }
 
-    // ── icb-parser (tree‑sitter) ──
+    // icb-parser (tree‑sitter)
     if name.starts_with("ts_") {
-        // Примеры: ts_cpp_large_file_1000_funcs, ts_go_deeply_nested_5_levels, ts_ruby_many_calls_10000
         if let Some(rest) = name.strip_prefix("ts_") {
             let parts: Vec<&str> = rest.splitn(2, '_').collect();
             if parts.len() >= 2 {
@@ -159,6 +156,25 @@ fn classify(name: &str) -> (String, String, String) {
         }
     }
 
-    // fallback
+    // icb-rustc (native Rust analysis)
+    if name.starts_with("rustc_") {
+        let rest = name.strip_prefix("rustc_").unwrap();
+        if let Some(first_underscore) = rest.find('_') {
+            let scenario_code = &rest[first_underscore + 1..];
+            let scenario = match () {
+                _ if scenario_code.starts_with("large_file")
+                    || scenario_code.starts_with("single_large_file") =>
+                {
+                    "Single Large File"
+                }
+                _ if scenario_code.starts_with("deeply_nested") => "Deeply Nested",
+                _ if scenario_code.starts_with("many_calls") => "Many Calls",
+                _ if scenario_code.starts_with("real_project") => "Real Project",
+                _ => scenario_code,
+            };
+            return ("icb-rustc".into(), scenario.to_string(), "rustc".into());
+        }
+    }
+
     ("unknown".into(), name.to_string(), "unknown".into())
 }
