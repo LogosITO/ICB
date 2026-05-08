@@ -2,10 +2,10 @@ import { useState } from 'react'
 import Overview from './Overview'
 import Functions from './FunctionsTable'
 import Classes from './ClassesTable'
-import GraphViewer from './GraphViewer'
+import TreeViewer from './TreeViewer'
 import DiffViewer from './DiffViewer'
 
-type Tab = 'overview' | 'functions' | 'classes' | 'graph' | 'diff'
+type Tab = 'overview' | 'functions' | 'classes' | 'tree' | 'diff'
 
 export default function Dashboard() {
     const [activeTab, setActiveTab] = useState<Tab>('overview')
@@ -15,7 +15,7 @@ export default function Dashboard() {
         { key: 'overview', label: 'Overview' },
         { key: 'functions', label: 'Functions' },
         { key: 'classes', label: 'Classes' },
-        { key: 'graph', label: 'Graph' },
+        { key: 'tree', label: 'Tree' },
         { key: 'diff', label: 'Diff' },
     ]
 
@@ -42,12 +42,11 @@ export default function Dashboard() {
             </div>
             <div style={{ flex: 1, overflow: 'auto' }}>
                 {activeTab === 'overview' && <Overview />}
-                {activeTab === 'functions' && <Functions onSelect={(name) => setFocusNode(name)} />}
-                {activeTab === 'classes' && <Classes onSelect={(name) => setFocusNode(name)} />}
-                {activeTab === 'graph' && (
-                    <GraphViewer
+                {activeTab === 'functions' && <Functions onSelect={(name: string) => setFocusNode(name)} />}
+                {activeTab === 'classes' && <Classes onSelect={(name: string) => setFocusNode(name)} />}
+                {activeTab === 'tree' && (
+                    <TreeViewer
                         focus={focusNode}
-                        onSelectNode={(name) => setFocusNode(name)}
                     />
                 )}
                 {activeTab === 'diff' && <DiffViewer />}

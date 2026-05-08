@@ -51,7 +51,6 @@ function buildGraph(data: TreeNode | TreeNode[]) {
         if (!nodesMap.has(id)) nodesMap.set(id, node)
         node.children?.forEach(child => {
             const childId = getId(child)
-            // игнорируем self‑edges
             if (id !== childId) {
                 edges.push({ from: id, to: childId })
             }
@@ -62,8 +61,11 @@ function buildGraph(data: TreeNode | TreeNode[]) {
     if (Array.isArray(data)) data.forEach(walk)
     else walk(data)
 
+    const parentMap = new Map<string, string>()
+    edges.forEach(e => parentMap.set(e.to, e.from))
+
     return {
-        nodes: Array.from(nodesMap.entries()).map(([id, data]) => ({ id, data })),
+        nodes: Array.from(nodesMap.entries()).map(([id, data]) => ({ id, data, parentId: parentMap.get(id) })),
         edges,
     }
 }
@@ -103,6 +105,7 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         chainMap: Map<string, number>
     } | null>(null)
     const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+    const [highlighted, setHighlighted] = useState<Set<string>>(new Set())
     const [hoverChain, setHoverChain] = useState<number | null>(null)
     const [actualHoverChain, setActualHoverChain] = useState<number | null>(null)
     const [search, setSearch] = useState('')
@@ -151,9 +154,9 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                 labels: [{ text: n.data.name }],
                 data: n.data,
                 chainId: chainMap.get(n.id) ?? -1,
+                parentId: n.parentId,
             }))
 
-            // отфильтровываем self‑edges ещё и на уровне ELK (хотя buildGraph тоже фильтрует)
             const elkEdges: ElkEdge[] = edges
                 .filter(e => e.from !== e.to)
                 .map((e, i) => ({
@@ -181,6 +184,8 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                 chainMap,
             })
             setCollapsed(new Set())
+            setHighlighted(new Set())
+            setSelectedNodeId(null)
         } catch (e: any) {
             clearTimeout(timeout)
             if (e.name === 'AbortError') {
@@ -245,6 +250,16 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
 
     const handleMouseUp = () => { isDragging.current = false }
 
+    const isNodeVisible = useCallback((nodeId: string): boolean => {
+        let current: string | undefined = nodeId
+        while (current) {
+            if (collapsed.has(current)) return false
+            const node = layout?.children?.find(n => n.id === current)
+            current = node?.parentId
+        }
+        return true
+    }, [collapsed, layout])
+
     const toggleCollapse = (nodeId: string) => {
         setCollapsed(prev => {
             const next = new Set(prev)
@@ -253,6 +268,22 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
             return next
         })
     }
+
+    const handleNodeClick = useCallback((nodeId: string) => {
+        toggleCollapse(nodeId)
+        setSelectedNodeId(nodeId)
+
+        const newHighlighted = new Set<string>([nodeId])
+        const node = layout?.children?.find(n => n.id === nodeId)
+        if (node?.parentId) newHighlighted.add(node.parentId)
+
+        const childIds = layout?.edges
+            ?.filter(e => e.sources[0] === nodeId)
+            .map(e => e.targets[0]) ?? []
+        childIds.forEach(id => newHighlighted.add(id))
+
+        setHighlighted(newHighlighted)
+    }, [layout])
 
     const centerOnNode = (nodeId: string) => {
         const node = layout?.children?.find(n => n.id === nodeId)
@@ -271,40 +302,44 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
         setOffset({ x: 0, y: 0 })
     }
 
-    const isNodeVisible = (nodeId: string): boolean => {
-        let current = nodeId
-        while (current) {
-            if (collapsed.has(current)) return false
-            const parent = layout?.children?.find(n => n.id === current)
-            current = parent?.parentId || ''
-            if (!current) break
+    const fitToScreen = () => {
+        if (!layout || !svgRef.current) return
+        const visible = layout.children?.filter(n => isNodeVisible(n.id!)) || []
+        if (visible.length === 0) return
+        const first = visible[0]
+        let minX = first.x ?? 0, minY = first.y ?? 0
+        let maxX = (first.x ?? 0) + first.width, maxY = (first.y ?? 0) + first.height
+        visible.forEach(n => {
+            if (n.x === undefined || n.y === undefined) return
+            minX = Math.min(minX, n.x)
+            minY = Math.min(minY, n.y)
+            maxX = Math.max(maxX, n.x + n.width)
+            maxY = Math.max(maxY, n.y + n.height)
+        })
+        const width = maxX - minX
+        const height = maxY - minY
+        const svgRect = svgRef.current.getBoundingClientRect()
+        const pad = 40
+        const scaleX = (svgRect.width - pad * 2) / width
+        const scaleY = (svgRect.height - pad * 2) / height
+        const newScale = Math.min(scaleX, scaleY, 2)
+        const newOffset = {
+            x: svgRect.width / 2 - (minX + width / 2) * newScale,
+            y: svgRect.height / 2 - (minY + height / 2) * newScale,
         }
-        return true
+        setScale(newScale)
+        setOffset(newOffset)
     }
 
     if (loading) {
-        return (
-            <div style={{ padding: 20, color: '#888' }}>
-                Loading call tree...
-            </div>
-        )
+        return <div style={{ padding: 20, color: '#888' }}>Loading call tree...</div>
     }
 
     if (error) {
         return (
             <div style={{ padding: 20, color: '#c44' }}>
                 <p>Error: {error}</p>
-                <button
-                    onClick={fetchAndLayout}
-                    style={{
-                        background: '#333',
-                        border: '1px solid #555',
-                        color: '#ccc',
-                        padding: '4px 12px',
-                        borderRadius: 4,
-                        cursor: 'pointer',
-                    }}
-                >
+                <button onClick={fetchAndLayout} style={{ background: '#333', border: '1px solid #555', color: '#ccc', padding: '4px 12px', borderRadius: 4, cursor: 'pointer' }}>
                     Retry
                 </button>
             </div>
@@ -351,7 +386,6 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
 
     return (
         <div style={{ width: '100%', height: '90vh', background: '#0b0f14', overflow: 'hidden', position: 'relative' }}>
-            {/* Панель управления */}
             <div style={{
                 position: 'absolute', top: 10, left: 10, zIndex: 10,
                 display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap'
@@ -388,20 +422,20 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                         ))}
                     </select>
                 )}
-                <button
-                    onClick={resetView}
-                    title="Reset zoom and pan"
-                    style={{
-                        background: '#333', border: '1px solid #555', color: '#ccc',
-                        padding: '4px 12px', borderRadius: 4, cursor: 'pointer',
-                        fontSize: '0.85rem'
-                    }}
-                >
+                <button onClick={resetView} title="Reset zoom and pan" style={{
+                    background: '#333', border: '1px solid #555', color: '#ccc',
+                    padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: '0.85rem'
+                }}>
                     Reset view
+                </button>
+                <button onClick={fitToScreen} title="Fit to visible nodes" style={{
+                    background: '#333', border: '1px solid #555', color: '#ccc',
+                    padding: '4px 12px', borderRadius: 4, cursor: 'pointer', fontSize: '0.85rem'
+                }}>
+                    Fit to screen
                 </button>
             </div>
 
-            {/* Легенда цепочек */}
             <div style={{
                 position: 'absolute', top: 50, left: 10, zIndex: 10,
                 display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap',
@@ -416,7 +450,6 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                 ))}
             </div>
 
-            {/* Холст */}
             <div
                 style={{ width: '100%', height: '100%', cursor: 'grab' }}
                 onWheel={handleWheel}
@@ -442,11 +475,11 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                         ))}
                     </defs>
                     <g transform={`translate(${offset.x},${offset.y}) scale(${scale})`}>
-                        {/* Узлы раньше рёбер */}
                         {visibleNodes.map(node => {
                             const chainId = node.chainId ?? -1
                             const color = CHAIN_COLORS[chainId % CHAIN_COLORS.length]
                             const isHovered = actualHoverChain === chainId
+                            const isHighlighted = highlighted.has(node.id!)
                             const opacity = actualHoverChain === null ? 1 : (isHovered ? 1 : 0.2)
                             const isCollapsed = collapsed.has(node.id!)
                             const isClass = node.data.kind === 'Class'
@@ -469,12 +502,11 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                                         rx={rectRx}
                                         fill="#121820"
                                         stroke={color}
-                                        strokeWidth={selectedNodeId === node.id ? 3 : 2}
+                                        strokeWidth={isHighlighted ? 3 : (selectedNodeId === node.id ? 3 : 2)}
                                         opacity={opacity}
                                         onClick={(e) => {
                                             e.stopPropagation()
-                                            toggleCollapse(node.id!)
-                                            setSelectedNodeId(node.id!)
+                                            handleNodeClick(node.id!)
                                         }}
                                     />
                                     <text
@@ -500,7 +532,6 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                             )
                         })}
 
-                        {/* Рёбра поверх узлов */}
                         {visibleEdges.map(edge => {
                             const srcId = edge.sources[0]
                             const tgtId = edge.targets[0]
@@ -540,7 +571,6 @@ const TreeViewer: React.FC<{ focus?: string | null }> = ({ focus }) => {
                 </svg>
             </div>
 
-            {/* Индикатор количества */}
             <div style={{
                 position: 'absolute', bottom: 10, left: 10, zIndex: 10,
                 color: '#666', fontSize: '0.75rem', fontFamily: 'monospace',
