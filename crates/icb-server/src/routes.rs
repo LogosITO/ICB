@@ -55,7 +55,8 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             .route("/diff", web::get().to(get_diff))
             .route("/load", web::post().to(post_load))
             .route("/upload", web::post().to(upload::handle_upload))
-            .route("/call-tree", web::get().to(get_call_tree)),
+            .route("/call-tree", web::get().to(get_call_tree))
+            .route("/stats", web::get().to(get_stats)),
     );
 }
 
@@ -659,6 +660,14 @@ fn subgraph_by_kind(cpg: &CodePropertyGraph, kind: Option<&str>, max_nodes: usiz
         nodes: selected_nodes,
         edges: selected_edges,
     }
+}
+
+async fn get_stats(data: web::Data<Mutex<CodePropertyGraph>>) -> HttpResponse {
+    let graph = data.lock().unwrap();
+    HttpResponse::Ok().json(serde_json::json!({
+        "nodes": graph.graph.node_count(),
+        "edges": graph.graph.edge_count(),
+    }))
 }
 
 #[doc(hidden)]
