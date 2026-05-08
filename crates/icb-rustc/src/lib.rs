@@ -8,12 +8,11 @@
 //!
 //! # Architecture
 //!
-//! - [`driver::run_rustc_analysis`] launches a `rustc` session for a given
-//!   crate.
-//! - During compilation, the HIR (High‑level IR) is walked by a visitor
-//!   implemented in [`visitor`].
-//! - The visitor records functions, methods, trait/struct/enum
-//!   declarations, and call expressions as [`RawNode`] facts.
+//! The entry point is [`parse_rust_crate`].  When the `nightly` feature is
+//! enabled it calls into [`driver::run_analysis`] which starts a `rustc`
+//! session, obtains the HIR, and invokes the HIR visitor implemented in
+//! [`visitor`].  The visitor records functions, methods, trait/struct/enum
+//! declarations, impl blocks, and call expressions as [`RawNode`] facts.
 //!
 //! # Feature flags
 //!
@@ -55,7 +54,7 @@ use std::path::Path;
 pub fn parse_rust_crate(_crate_root: &Path, _args: &[String]) -> Result<Vec<RawNode>> {
     #[cfg(feature = "nightly")]
     {
-        driver::run_rustc_analysis(_crate_root, _args)
+        driver::run_analysis(_crate_root, _args)
     }
     #[cfg(not(feature = "nightly"))]
     {

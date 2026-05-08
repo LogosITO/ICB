@@ -34,6 +34,13 @@
 //! for C++ code.  If Clang cannot be loaded (e.g. LLVM not installed), the
 //! pipeline automatically falls back to tree‑sitter‑cpp.
 //!
+//! # Rust: rustc preferred, tree‑sitter fallback
+//!
+//! For Rust projects, when the `rustc` feature is enabled and a nightly
+//! compiler is used, the pipeline uses the native [`icb_rustc`] backend
+//! which provides precise semantic information (traits, generics, macros).
+//! On stable or without the feature, it falls back to tree‑sitter‑rust.
+//!
 //! # Strict file extension filtering & multi‑language support
 //!
 //! For every known language, only a curated list of file extensions is
@@ -51,6 +58,9 @@ use anyhow::anyhow;
 use icb_common::Language;
 use icb_graph::{cache, graph::CodePropertyGraph};
 use icb_parser::facts::RawNode;
+
+#[cfg(feature = "rustc")]
+use icb_rustc;
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -178,6 +188,12 @@ fn run_pipeline(
         .transpose()?
         .or_else(|| IncrementalCache::new(&project.join(".icb_cache")).ok());
 
+    if cfg.languages.contains(&Language::Rust) {
+        if let Some(cpg) = try_rustc_pipeline(project, &cfg, graph_cache_path) {
+            return Ok(cpg);
+        }
+    }
+
     if cfg.languages.contains(&Language::CppTreeSitter) {
         if let Some(cpg) = try_clang_pipeline(project, &cfg, graph_cache_path, inc_cache.as_ref()) {
             return Ok(cpg);
@@ -264,6 +280,73 @@ fn run_pipeline(
     }
 
     Ok(cpg)
+}
+
+/// Attempt to use the `icb-rustc` native backend for Rust projects.
+///
+/// Returns `Some(CodePropertyGraph)` if successful, otherwise `None`
+/// and the pipeline will fall back to tree‑sitter.
+fn try_rustc_pipeline(
+    _project: &Path,
+    _cfg: &PipelineConfig,
+    _graph_cache_path: Option<&PathBuf>,
+) -> Option<CodePropertyGraph> {
+    #[cfg(feature = "rustc")]
+    {
+        log::info!("Attempting rustc graph construction...");
+
+        let cargo_toml = _project.join("Cargo.toml");
+        if !cargo_toml.exists() {
+            log::warn!(
+                "Cargo.toml not found in {:?}, falling back to tree-sitter",
+                _project
+            );
+            return None;
+        }
+
+        let main_rs = _project.join("src/main.rs");
+        let lib_rs = _project.join("src/lib.rs");
+        let entry = if main_rs.exists() {
+            main_rs
+        } else if lib_rs.exists() {
+            lib_rs
+        } else {
+            log::warn!("No main.rs or lib.rs found, falling back");
+            return None;
+        };
+
+        let args: Vec<String> = vec!["--edition".to_string(), "2021".to_string()];
+        let facts = match icb_rustc::parse_rust_crate(&entry, &args) {
+            Ok(f) => f,
+            Err(e) => {
+                log::warn!("rustc analysis failed: {}, falling back to tree-sitter", e);
+                return None;
+            }
+        };
+
+        log::info!("rustc produced {} facts", facts.len());
+
+        let mut builder = icb_graph::builder::GraphBuilder::new();
+        let mut local = icb_graph::builder::GraphBuilder::new();
+        local.ingest_file_facts(&facts);
+        builder.merge(local);
+
+        display_name::cleanup_node_names(&mut builder.cpg);
+        builder.resolve_calls();
+        let mut cpg = builder.cpg;
+        display_name::cleanup_node_names(&mut cpg);
+
+        if let Some(cache_file) = _graph_cache_path {
+            let _ = cache::save_graph(&cpg, cache_file);
+        }
+        log::info!("rustc graph built successfully");
+        Some(cpg)
+    }
+    #[cfg(not(feature = "rustc"))]
+    {
+        log::debug!("rustc feature not compiled in");
+        None
+    }
 }
 
 fn try_clang_pipeline(

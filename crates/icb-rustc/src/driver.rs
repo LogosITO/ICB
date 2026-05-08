@@ -1,8 +1,8 @@
 //! Launcher for the `rustc_interface` session.
 //!
-//! When the `nightly` feature is enabled, this module calls into the
-//! compiler, obtains the HIR, and returns extracted facts.
-//! Without the feature it compiles as a no‑op.
+//! Constructs a [`rustc_interface::Config`], runs the compiler, and extracts
+//! the HIR map.  The actual fact collection is delegated to
+//! [`visitor::collect_facts`].
 
 use anyhow::Result;
 use icb_parser::facts::RawNode;
@@ -10,7 +10,7 @@ use std::path::Path;
 
 #[cfg(feature = "nightly")]
 mod nightly_impl {
-    use anyhow::{anyhow, bail, Context};
+    use anyhow::{anyhow, Context};
     use icb_parser::facts::RawNode;
     use std::panic;
     use std::path::PathBuf;
@@ -32,7 +32,9 @@ mod nightly_impl {
                 |compiler| {
                     let tcx = compiler.tcx();
                     let hir_map = tcx.hir();
-                    crate::visitor::collect_facts(tcx, hir_map).map_err(|e| anyhow!("{}", e))
+                    let source_map = tcx.sess.source_map();
+                    crate::visitor::collect_facts(tcx, hir_map, source_map)
+                        .map_err(|e| anyhow!("{}", e))
                 },
             )
         }));
@@ -48,7 +50,7 @@ mod nightly_impl {
 /// Public driver entry point.
 ///
 /// On non‑nightly builds this simply returns an empty vector.
-pub fn run_rustc_analysis(_crate_root: &Path, _args: &[String]) -> Result<Vec<RawNode>> {
+pub fn run_analysis(_crate_root: &Path, _args: &[String]) -> Result<Vec<RawNode>> {
     #[cfg(feature = "nightly")]
     {
         nightly_impl::run(_crate_root, _args)
