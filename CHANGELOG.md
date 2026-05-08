@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.10](https://github.com/LogosITO/ICB/compare/v0.8.9...v0.8.10) (2026-05-08)
+
+
+### Bug Fixes
+
+* **web:** virtual scroll in tables, fit-to-screen and neighbor highlight in TreeViewer ([7882328](https://github.com/LogosITO/ICB/commit/7882328f0105c00d8781a0b2de00246c1edc1099))
+
 ## [0.8.9](https://github.com/LogosITO/ICB/compare/v0.8.8...v0.8.9) (2026-05-07)
 
 
