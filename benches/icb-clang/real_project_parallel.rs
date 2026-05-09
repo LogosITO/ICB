@@ -1,6 +1,7 @@
 //! Benchmarks: parallel parsing of a real project (set via ICB_BENCH_PROJECT env).
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_clang::project;
+use std::hint::black_box;
 use std::path::Path;
 
 fn bench(c: &mut Criterion) {

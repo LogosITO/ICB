@@ -1,7 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_common::NodeKind;
 use icb_graph::builder::GraphBuilder;
 use icb_parser::facts::RawNode;
+use std::hint::black_box;
 
 fn make_facts(size: usize) -> Vec<RawNode> {
     let mut f = Vec::new();

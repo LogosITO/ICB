@@ -1,6 +1,7 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_common::Language;
 use icb_parser::manager::ParserManager;
+use std::hint::black_box;
 use std::path::Path;
 
 fn bench(c: &mut Criterion) {

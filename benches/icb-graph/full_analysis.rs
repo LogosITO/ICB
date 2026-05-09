@@ -1,9 +1,10 @@
 //! Benchmark: full pipeline – building graph + resolving calls + collecting metrics.
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_common::NodeKind;
 use icb_graph::analysis;
 use icb_graph::builder::GraphBuilder;
 use icb_parser::facts::RawNode;
+use std::hint::black_box;
 
 fn make_graph(size: usize) -> icb_graph::graph::CodePropertyGraph {
     let mut facts = Vec::new();

@@ -1,6 +1,7 @@
 //! Benchmarks: impact of system header exclusion.
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_clang::parser;
+use std::hint::black_box;
 
 mod common;
 

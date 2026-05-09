@@ -9,13 +9,14 @@
 //! skipped.
 
 use anyhow::Result;
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_common::NodeKind;
 use icb_graph::builder::GraphBuilder;
 use icb_parser::facts::RawNode;
 use icb_server::analytics;
 use icb_server::display_name;
 use icb_server::routes;
+use std::hint::black_box;
 
 fn run_pipeline(project_path: &str) -> Result<()> {
     let root = std::path::Path::new(project_path);

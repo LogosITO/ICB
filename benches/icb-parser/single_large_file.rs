@@ -1,7 +1,8 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_parser::cpp_tree_sitter;
 use icb_parser::lang::go;
 use icb_parser::lang::ruby;
+use std::hint::black_box;
 
 mod common;
 

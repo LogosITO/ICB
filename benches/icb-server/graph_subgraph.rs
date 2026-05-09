@@ -1,8 +1,9 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_common::NodeKind;
 use icb_graph::graph::{CodePropertyGraph, Edge, GraphData};
 use petgraph::visit::EdgeRef;
 use std::collections::{HashMap, HashSet};
+use std::hint::black_box;
 
 fn make_test_graph(size: usize) -> CodePropertyGraph {
     let mut cpg = CodePropertyGraph::new();

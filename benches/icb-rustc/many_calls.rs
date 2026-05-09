@@ -1,8 +1,9 @@
 //! Benchmark: many function calls inside a single Rust source file.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use icb_rustc;
 use std::fs;
+use std::hint::black_box;
 use tempfile::Builder;
 
 mod common;
