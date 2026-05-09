@@ -18,10 +18,10 @@ fn main() -> anyhow::Result<()> {
 
         let file = fs::File::open(path)?;
 
-        for line in io::BufReader::new(file).lines() {
-            let line = line?;
+        let lines: Vec<String> = io::BufReader::new(file).lines().collect::<Result<_, _>>()?;
 
-            if let Some((name, ns)) = parse_benchmark_line(&line) {
+        for i in 0..lines.len() {
+            if let Some((name, ns)) = parse_benchmark(&lines, i) {
                 let (crate_name, scenario, backend) = classify(&name);
 
                 crates
@@ -60,35 +60,39 @@ struct Metadata {
     version: String,
 }
 
-fn parse_benchmark_line(line: &str) -> Option<(String, f64)> {
-    let line = line.trim();
+fn parse_benchmark(lines: &[String], index: usize) -> Option<(String, f64)> {
+    let line = lines.get(index)?.trim();
 
-    // Criterion example:
+    // Ищем строку:
     //
-    // single_large_file
-    //                         time:   [12.345 us 12.678 us 13.012 us]
+    // single_large_file_100_funcs
     //
-    // OR:
+    // следующая:
     //
-    // Benchmarking single_large_file: Collecting ...
+    // time: [12.345 us 12.678 us 13.012 us]
 
-    if !line.contains("time:") {
+    if line.is_empty() {
         return None;
     }
 
-    let (name_part, rest) = line.split_once("time:")?;
+    if line.starts_with("Benchmarking ") {
+        return None;
+    }
 
-    let name = name_part.trim().to_string();
+    let next = lines.get(index + 1)?.trim();
 
-    let start = rest.find('[')?;
-    let end = rest.find(']')?;
+    if !next.starts_with("time:") {
+        return None;
+    }
 
-    let values = &rest[start + 1..end];
+    let name = line.to_string();
+
+    let start = next.find('[')?;
+    let end = next.find(']')?;
+
+    let values = &next[start + 1..end];
 
     let parts: Vec<&str> = values.split_whitespace().collect();
-
-    // Example:
-    // ["12.345", "us", "12.678", "us", "13.012", "us"]
 
     if parts.len() < 2 {
         return None;
