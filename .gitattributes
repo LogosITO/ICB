@@ -1,0 +1,7 @@
+web/dist/** linguist-generated=true
+web/build/** linguist-generated=true
+
+*.min.js linguist-generated=true
+*.bundle.js linguist-generated=true
+
+docs/bench-data/** linguist-generated=true

@@ -1,24 +1,152 @@
-target/
-**/*.rs.bk
+# =========================================
+# Rust
+# =========================================
 
+target/
+**/target/
+
+Cargo.lock
+*.rs.bk
+
+# Benchmark artifacts
+criterion/
+benchmarks/
+bench-output/
+*.bench
+*.profraw
+*.profdata
+
+# Rust analyzer / tooling
+.rustup/
+.cargo/
+
+# =========================================
+# ICB
+# =========================================
 
 .icb_cache/
+.icb-index/
+.icb/
+
+# =========================================
+# Node / Web
+# =========================================
+
+node_modules/
+**/node_modules/
+
+dist/
+build/
+out/
+coverage/
+.next/
+.nuxt/
+.svelte-kit/
+.parcel-cache/
+.turbo/
+vite.svg
 
 web/node_modules/
 web/dist/
 web/build/
+web/.next/
+web/coverage/
 
-.DS_Store
-Thumbs.db
+# Package managers
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# =========================================
+# Environment
+# =========================================
+
+.env
+.env.*
+!.env.example
+
+# =========================================
+# IDE / Editor
+# =========================================
 
 .idea/
 .vscode/
+.vs/
+
 *.swp
 *.swo
 *~
+*.tmp
+*.temp
+
+# JetBrains
+*.iml
+
+# =========================================
+# OS
+# =========================================
+
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# =========================================
+# Logs
+# =========================================
 
 *.log
+logs/
+*.trace
 
-benches/target/
+# =========================================
+# C / C++ / LLVM
+# =========================================
 
-Cargo.lock
+*.o
+*.obj
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.exe
+*.pdb
+
+compile_commands.json
+
+# LLVM / Clang cache
+.cache/
+clangd/
+
+# =========================================
+# Generated files
+# =========================================
+
+*.generated.*
+generated/
+tmp/
+temp/
+
+# =========================================
+# Testing
+# =========================================
+
+coverage/
+htmlcov/
+.pytest_cache/
+
+# =========================================
+# Python
+# =========================================
+
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# =========================================
+# GitHub Actions artifacts
+# =========================================
+
+artifacts/
