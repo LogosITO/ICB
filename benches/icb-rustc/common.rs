@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Synthetic Rust source generators for icb-rustc benchmarks.
 
 pub fn build_large_flat_source(num_functions: usize) -> String {

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Shared helpers for server-side benchmarks.
 //!
 //! Provides a single function [`build_graph`] that constructs a
