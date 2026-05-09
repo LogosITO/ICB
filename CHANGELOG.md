@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.11](https://github.com/LogosITO/ICB/compare/v0.8.10...v0.8.11) (2026-05-09)
+
+
+### Bug Fixes
+
+* Hotfix 3 ([2baeea8](https://github.com/LogosITO/ICB/commit/2baeea858141b5acb8ab662620398dff6ecea507))
+* Hotfix 4 ([e664946](https://github.com/LogosITO/ICB/commit/e664946feada9b1449bcfbf242192b92b80debac))
+
 ## [0.8.10](https://github.com/LogosITO/ICB/compare/v0.8.9...v0.8.10) (2026-05-08)
 
 
