@@ -5,107 +5,114 @@ on:
   push:
     branches: [main]
     paths:
-      - 'crates/icb-clang/**'
-      - 'crates/icb-graph/**'
-      - 'crates/icb-parser/**'
-      - 'crates/icb-rustc/**'
+      - 'crates/**'
       - 'benches/**'
       - 'scripts/generate-bench-json/**'
       - '.github/workflows/benchmarks.yml'
   pull_request:
     branches: [main]
-    paths:
-      - 'crates/icb-clang/**'
-      - 'crates/icb-graph/**'
-      - 'crates/icb-parser/**'
-      - 'crates/icb-rustc/**'
-      - 'benches/**'
-      - 'scripts/generate-bench-json/**'
-      - '.github/workflows/benchmarks.yml'
 
 jobs:
   bench-clang:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
           toolchain: stable
-      - name: Install LLVM and Clang libraries
+
+      - name: Install LLVM
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y llvm-dev libclang-dev libclang-cpp-dev clang
-          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
-      - name: Run Clang benchmarks
+          sudo apt-get install -y llvm-dev libclang-dev clang
+
+      - name: Run Clang benchmarks (DEBUG ENABLED)
         run: |
-          cargo bench -p icb-clang-benchmarks           \
-            --bench single_large_file                   \
-            --bench deeply_nested                       \
-            --bench many_calls                          \
-            --bench system_headers                      \
-            -- --output-format bencher | tee bench_clang.txt
+          set -euxo pipefail
+          cargo bench -p icb-clang-benchmarks \
+            --bench single_large_file \
+            --bench deeply_nested \
+            --bench many_calls \
+            --bench system_headers \
+            -- --nocapture | tee bench_clang.txt
+
+          echo "===== bench_clang.txt ====="
+          cat bench_clang.txt || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: bench-clang
           path: bench_clang.txt
+
 
   bench-graph:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-      - name: Run Graph benchmarks
+
+      - name: Run Graph benchmarks (DEBUG ENABLED)
         run: |
-          cargo bench -p icb-graph-benchmarks           \
-            --bench build_graph                         \
-            --bench resolve_calls                       \
-            --bench full_analysis                       \
-            -- --output-format bencher | tee bench_graph.txt
+          set -euxo pipefail
+          cargo bench -p icb-graph-benchmarks \
+            --bench build_graph \
+            --bench resolve_calls \
+            --bench full_analysis \
+            -- --nocapture | tee bench_graph.txt
+
+          echo "===== bench_graph.txt ====="
+          cat bench_graph.txt || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: bench-graph
           path: bench_graph.txt
+
 
   bench-server:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-      - name: Install LLVM and Clang libraries
+
+      - name: Run Server benchmarks (DEBUG ENABLED)
         run: |
-          sudo apt-get update -y
-          sudo apt-get install -y llvm-dev libclang-dev libclang-cpp-dev clang
-          echo "LIBCLANG_PATH=$(llvm-config --libdir)" >> $GITHUB_ENV
-      - name: Run Server benchmarks
-        run: |
-          cargo bench -p icb-server-benchmarks          \
-            --bench analytics_metrics                   \
-            --bench graph_serialization                 \
-            --bench graph_subgraph                      \
-            -- --output-format bencher | tee bench_server.txt
+          set -euxo pipefail
+          cargo bench -p icb-server-benchmarks \
+            --bench analytics_metrics \
+            --bench graph_serialization \
+            --bench graph_subgraph \
+            -- --nocapture | tee bench_server.txt
+
+          echo "===== bench_server.txt ====="
+          cat bench_server.txt || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: bench-server
           path: bench_server.txt
+
 
   bench-parser-ts:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
-      - name: Run tree‑sitter benchmarks
+
+      - name: Run parser benchmarks (DEBUG ENABLED)
         run: |
-          cargo bench -p icb-parser-benchmarks -- --output-format bencher | tee bench_ts.txt
+          set -euxo pipefail
+          cargo bench -p icb-parser-benchmarks -- --nocapture | tee bench_ts.txt
+
+          echo "===== bench_ts.txt ====="
+          cat bench_ts.txt || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: bench-ts
           path: bench_ts.txt
+
 
   bench-rustc:
     runs-on: ubuntu-latest
@@ -115,50 +122,71 @@ jobs:
         with:
           toolchain: nightly
           components: rustc-dev,llvm-tools-preview
-      - name: Run rustc benchmarks
+
+      - name: Run rustc benchmarks (DEBUG ENABLED)
         env:
           RUSTC_BOOTSTRAP: 1
         run: |
-          cargo bench -p icb-rustc-benchmarks          \
-            --bench single_large_file                   \
-            --bench deeply_nested                       \
-            --bench many_calls                          \
-            -- --output-format bencher | tee bench_rustc.txt
+          set -euxo pipefail
+          cargo bench -p icb-rustc-benchmarks \
+            --bench single_large_file \
+            --bench deeply_nested \
+            --bench many_calls \
+            -- --nocapture | tee bench_rustc.txt
+
+          echo "===== bench_rustc.txt ====="
+          cat bench_rustc.txt || true
+
       - uses: actions/upload-artifact@v4
         with:
           name: bench-rustc
           path: bench_rustc.txt
 
+
   publish-results:
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    if: github.event_name != 'pull_request'
     needs: [bench-clang, bench-graph, bench-server, bench-parser-ts, bench-rustc]
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
+
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+
       - uses: actions-rust-lang/setup-rust-toolchain@v1
-        with:
-          toolchain: stable
+
+      - name: Show artifacts BEFORE parsing (IMPORTANT DEBUG)
+        run: |
+          echo "=== ARTIFACT TREE ==="
+          find artifacts || true
+
       - name: Generate latest.json
         run: |
           mkdir -p docs/bench-data
+
           cargo run -p generate-bench-json -- \
             artifacts/bench-clang/bench_clang.txt \
             artifacts/bench-graph/bench_graph.txt \
             artifacts/bench-server/bench_server.txt \
             artifacts/bench-ts/bench_ts.txt \
             artifacts/bench-rustc/bench_rustc.txt \
-            > docs/bench-data/latest.json
+            | tee docs/bench-data/latest.json
+
+          echo "===== GENERATED JSON ====="
+          cat docs/bench-data/latest.json
+
       - name: Commit and push
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
+
           git add docs/bench-data/latest.json
-          if git diff-index --quiet HEAD --; then
+
+          if git diff --cached --quiet; then
             echo "No changes";
           else
             git commit -m "bench: update latest.json"
