@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
         for line in io::BufReader::new(file).lines() {
             let line = line?;
 
-            if let Some((name, ns)) = parse_bencher_line(&line) {
+            if let Some((name, ns)) = parse_benchmark_line(&line) {
                 let (crate_name, scenario, backend) = classify(&name);
 
                 crates
@@ -60,26 +60,51 @@ struct Metadata {
     version: String,
 }
 
-fn parse_bencher_line(line: &str) -> Option<(String, f64)> {
+fn parse_benchmark_line(line: &str) -> Option<(String, f64)> {
     let line = line.trim();
 
-    if !line.starts_with("test ") {
+    // Criterion example:
+    //
+    // single_large_file
+    //                         time:   [12.345 us 12.678 us 13.012 us]
+    //
+    // OR:
+    //
+    // Benchmarking single_large_file: Collecting ...
+
+    if !line.contains("time:") {
         return None;
     }
 
-    let rest = line.strip_prefix("test ")?;
-    let (name, rest) = rest.split_once(" ... bench:")?;
+    let (name_part, rest) = line.split_once("time:")?;
 
-    let name = name.trim().to_string();
-    let rest = rest.trim();
+    let name = name_part.trim().to_string();
+
+    let start = rest.find('[')?;
+    let end = rest.find(']')?;
+
+    let values = &rest[start + 1..end];
+
+    let parts: Vec<&str> = values.split_whitespace().collect();
 
     // Example:
-    // "12,345 ns/iter (+/- 123)"
-    let raw = rest.split_whitespace().next()?;
+    // ["12.345", "us", "12.678", "us", "13.012", "us"]
 
-    let cleaned = raw.replace([',', '_'], "");
+    if parts.len() < 2 {
+        return None;
+    }
 
-    let ns: f64 = cleaned.parse().ok()?;
+    let value: f64 = parts[0].replace([',', '_'], "").parse().ok()?;
+
+    let unit = parts[1];
+
+    let ns = match unit {
+        "ns" => value,
+        "us" | "µs" => value * 1_000.0,
+        "ms" => value * 1_000_000.0,
+        "s" => value * 1_000_000_000.0,
+        _ => return None,
+    };
 
     Some((name, ns))
 }
@@ -158,7 +183,7 @@ fn classify(name: &str) -> (String, String, String) {
         );
     }
 
-    // icb-parser (tree-sitter)
+    // icb-parser
     if name.starts_with("ts_") {
         if let Some(rest) = name.strip_prefix("ts_") {
             let parts: Vec<&str> = rest.splitn(2, '_').collect();
