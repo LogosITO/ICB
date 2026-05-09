@@ -1,6 +1,6 @@
 use criterion::{criterion_group, criterion_main, Criterion};
 use icb_common::NodeKind;
-use icb_graph::graph::{CodePropertyGraph, Edge, GraphData};
+use icb_graph::graph::{CodePropertyGraph, GraphData};
 use petgraph::visit::{EdgeRef, IntoEdgeReferences};
 use std::hint::black_box;
 
