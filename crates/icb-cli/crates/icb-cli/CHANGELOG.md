@@ -1,0 +1,91 @@
+# Changelog
+
+## [0.9.0](https://github.com/LogosITO/ICB/compare/icb-cli/v0.8.12...icb-cli/v0.9.0) (2026-05-10)
+
+
+### Features
+
+* add analytics API, tests, and modular server structure ([824da9d](https://github.com/LogosITO/ICB/commit/824da9de1f860d81829821cb61c9ad486a72a89a))
+* add persistent graph cache with bincode+zstd ([77e6aae](https://github.com/LogosITO/ICB/commit/77e6aaeadde50de9831d336a507bcedd44b37f46))
+* Add Python demo project for multi-file testing ([c51e07d](https://github.com/LogosITO/ICB/commit/c51e07dbe1ff056637d4771f5e9d95ea19a1ad97))
+* Added first implementation of new easy-to-use report system ([fc28dd3](https://github.com/LogosITO/ICB/commit/fc28dd330e29ed63717570c214ca312ddd7d43e5))
+* Added icb-server implementation ([074f8a0](https://github.com/LogosITO/ICB/commit/074f8a00a19921d3accaa38454975908c26dd402))
+* full C++ support with compile_commands.json, parallel parsing, and CLI integration ([24992c1](https://github.com/LogosITO/ICB/commit/24992c1fd1a509dc26444bf0d12dee1798a9837e))
+* Initial ICB structure with working parser, core and CLI ([0c3ac36](https://github.com/LogosITO/ICB/commit/0c3ac360372c16790139548c261ed1279d923870))
+* new scalable architecture with parser, graph core, and CLI ([1788a76](https://github.com/LogosITO/ICB/commit/1788a768ea31985b5a33cf2cbf99df4f25c4962f))
+* parallel indexing, call graph queries, and DOT export ([d48a757](https://github.com/LogosITO/ICB/commit/d48a757b86e7e76f126225369225c6ac181627ee))
+* rebuild architecture with docs and tests ([3f12405](https://github.com/LogosITO/ICB/commit/3f124054b1d08740a04c0fb4959dbad93edb08b7))
+
+
+### Bug Fixes
+
+* Fix --no-system-headers flag ([440f513](https://github.com/LogosITO/ICB/commit/440f513bf1e0bb63f91face595e03a73fff569dd))
+* update dead code test to reflect unreachable self‑loop function ([8f897d5](https://github.com/LogosITO/ICB/commit/8f897d5c4317a5a96d81a01595b6fd2a391170d7))
+
+
+### Documentation
+
+* **cli:** Updated autodocs content in cli ([e3dd339](https://github.com/LogosITO/ICB/commit/e3dd3395025ad03137916eeee4e0f06d7a6add35))
+
+
+### Chores
+
+* **main:** release 0.2.0 ([f9de95b](https://github.com/LogosITO/ICB/commit/f9de95b7e26557683f6775f64f9cb72648f23a40))
+* **main:** release 0.2.0 ([9a47af7](https://github.com/LogosITO/ICB/commit/9a47af7787b60eed643409b0d0f8f4c4a1659a8e))
+* **main:** release 0.3.0 ([5a14568](https://github.com/LogosITO/ICB/commit/5a1456898aa18ccdba0650a1ce6f1f8c48cd7199))
+* **main:** release 0.3.0 ([74d9efd](https://github.com/LogosITO/ICB/commit/74d9efd04b2c3d735a3a3458dfbd6196d37b12b7))
+* **main:** release 0.4.0 ([33b7e5c](https://github.com/LogosITO/ICB/commit/33b7e5cb9ee46a3df329532fb5a120de4830ead1))
+* **main:** release 0.4.0 ([693d479](https://github.com/LogosITO/ICB/commit/693d479a29108b5cf2e021854cd42f1df8f9fb71))
+* **main:** release 0.4.1 ([73a7eda](https://github.com/LogosITO/ICB/commit/73a7eda8c5300f76c702e738991eb3afc15379ff))
+* **main:** release 0.4.1 ([a14eafd](https://github.com/LogosITO/ICB/commit/a14eafdfc0d2d0f5fd2562ac799187c9d04f6661))
+* **main:** release 0.4.2 ([8723fef](https://github.com/LogosITO/ICB/commit/8723fef80fc492747cb85f3c7cf1b286dbeaa648))
+* **main:** release 0.4.2 ([c535bb4](https://github.com/LogosITO/ICB/commit/c535bb40006ff35704b45503bbbe56cdd6c621b5))
+* **main:** release 0.4.3 ([cf9e3e2](https://github.com/LogosITO/ICB/commit/cf9e3e2db2566b0c6a783bc51752d22016e4965b))
+* **main:** release 0.4.3 ([5e978ca](https://github.com/LogosITO/ICB/commit/5e978cafd9a4121b6391c820796da733fa05a966))
+* **main:** release 0.4.4 ([23ae7d9](https://github.com/LogosITO/ICB/commit/23ae7d90a9d1c30ebe763cb0cb079f13c6ff106a))
+* **main:** release 0.4.4 ([9c751fb](https://github.com/LogosITO/ICB/commit/9c751fbc9a17ca4afa8b2248ef070c090aad2a25))
+* **main:** release 0.5.0 ([7f7c5ba](https://github.com/LogosITO/ICB/commit/7f7c5bacaa1870bbd458348c1eb3c07928e4ed7c))
+* **main:** release 0.5.0 ([0cd1f17](https://github.com/LogosITO/ICB/commit/0cd1f1729849b9a96ef660ad80e18ff9a6e15245))
+* **main:** release 0.5.1 ([9b099ac](https://github.com/LogosITO/ICB/commit/9b099ac023342bdec7b9f8b0c2e180e4d0099304))
+* **main:** release 0.5.1 ([cb5988c](https://github.com/LogosITO/ICB/commit/cb5988c3da7ec22d1738a044ead68b5be9c211e9))
+* **main:** release 0.5.2 ([37c453b](https://github.com/LogosITO/ICB/commit/37c453b33d5a6ee4e97a195ae0ec62e30c711399))
+* **main:** release 0.5.2 ([d44b9e1](https://github.com/LogosITO/ICB/commit/d44b9e10c174e52f1e6feb1dd093170a78a18c51))
+* **main:** release 0.5.3 ([0078087](https://github.com/LogosITO/ICB/commit/00780874bc468d552cd4ccfb218c082ec1e24fb3))
+* **main:** release 0.5.3 ([888a233](https://github.com/LogosITO/ICB/commit/888a233e070269e43501e244a3a28ce8091d927a))
+* **main:** release 0.6.0 ([9f6528e](https://github.com/LogosITO/ICB/commit/9f6528e3154b1c2a47aa3adae311af1540eb4c90))
+* **main:** release 0.6.0 ([fe495fb](https://github.com/LogosITO/ICB/commit/fe495fbbe2266068d459eba0c12b68db0d2f5732))
+* **main:** release 0.6.1 ([ec2bbdc](https://github.com/LogosITO/ICB/commit/ec2bbdc4f94ec31def25e69188cb1cdb1bb2a132))
+* **main:** release 0.6.1 ([52eecad](https://github.com/LogosITO/ICB/commit/52eecadff06bb496e1e2e6f36b9fa7fcccdcd745))
+* **main:** release 0.6.2 ([bc48694](https://github.com/LogosITO/ICB/commit/bc4869422e127da3a099558267f843e96be5ac02))
+* **main:** release 0.6.2 ([8c77423](https://github.com/LogosITO/ICB/commit/8c77423bf71e4bd773bcc52e2b99b54efbf0029b))
+* **main:** release 0.7.0 ([786bb25](https://github.com/LogosITO/ICB/commit/786bb25fed1adf86b952f7d09179576ee66e701b))
+* **main:** release 0.7.0 ([d56d5cf](https://github.com/LogosITO/ICB/commit/d56d5cfd0df595faa9d57c310681c66fcfb3bbf5))
+* **main:** release 0.7.1 ([a30ba67](https://github.com/LogosITO/ICB/commit/a30ba67f5baaab23be53e46736ee40d8e0b6a0f4))
+* **main:** release 0.7.1 ([791e3ad](https://github.com/LogosITO/ICB/commit/791e3ad8febfec4240d450c360d8f06ac7bc639c))
+* **main:** release 0.7.2 ([510b651](https://github.com/LogosITO/ICB/commit/510b651b12ce2dc9fe4eab68d6adc84f759e2d01))
+* **main:** release 0.7.2 ([1a335a4](https://github.com/LogosITO/ICB/commit/1a335a4ba680c49cb9b8debffd169709b5c55fb1))
+* **main:** release 0.8.0 ([e219ebb](https://github.com/LogosITO/ICB/commit/e219ebbceaedb057ddbfd80756b7a8e8e38705d9))
+* **main:** release 0.8.0 ([629a508](https://github.com/LogosITO/ICB/commit/629a5088b2778e40ae7ed14e906407fe49b8efed))
+* **main:** release 0.8.1 ([22b3283](https://github.com/LogosITO/ICB/commit/22b3283148ca2295fe417f74c3808a5505e12a70))
+* **main:** release 0.8.1 ([04d75c0](https://github.com/LogosITO/ICB/commit/04d75c0e4339deeb0f4048b8ced555ca463eba65))
+* **main:** release 0.8.10 ([d5933d6](https://github.com/LogosITO/ICB/commit/d5933d62a0211db575a3bacb1364f841d5957d7c))
+* **main:** release 0.8.10 ([006fcad](https://github.com/LogosITO/ICB/commit/006fcad26087822f54979f0acf01fdbc9ca77435))
+* **main:** release 0.8.11 ([7986881](https://github.com/LogosITO/ICB/commit/7986881e124e599a9e845c1db7343c2fecf9b9a8))
+* **main:** release 0.8.11 ([50d369e](https://github.com/LogosITO/ICB/commit/50d369ecabe63a9933de1c76671ed78531587309))
+* **main:** release 0.8.12 ([df0252c](https://github.com/LogosITO/ICB/commit/df0252c7f5a702afec0e7f5bcee2fe68c9da9435))
+* **main:** release 0.8.12 ([81bf85e](https://github.com/LogosITO/ICB/commit/81bf85e475a07c05f4a72210ff605e6d0e8c1046))
+* **main:** release 0.8.2 ([cc473dc](https://github.com/LogosITO/ICB/commit/cc473dcdb0eac54a5e1ccc9907d11ffbd272bf0c))
+* **main:** release 0.8.2 ([db8ccd1](https://github.com/LogosITO/ICB/commit/db8ccd13e00a636db1bc8ab6a952b0a1471b3f11))
+* **main:** release 0.8.3 ([e00bfcb](https://github.com/LogosITO/ICB/commit/e00bfcb7c03974752df15f9289ea645bb5c9e636))
+* **main:** release 0.8.3 ([6aef9aa](https://github.com/LogosITO/ICB/commit/6aef9aa4bfb5fff0bc9415c98c71ff9f1903237b))
+* **main:** release 0.8.4 ([faca0a8](https://github.com/LogosITO/ICB/commit/faca0a8df4a630a50e0eed68c389735cd9c14a4f))
+* **main:** release 0.8.4 ([03db4cb](https://github.com/LogosITO/ICB/commit/03db4cb7e7e324f1cdb8cb81887f1607c076f368))
+* **main:** release 0.8.5 ([2689cae](https://github.com/LogosITO/ICB/commit/2689cae5b8f7b26033c909f430102bca2e720c33))
+* **main:** release 0.8.5 ([9999b4b](https://github.com/LogosITO/ICB/commit/9999b4b6c49c3a222b7db2b99e65741950366c95))
+* **main:** release 0.8.6 ([5652ec0](https://github.com/LogosITO/ICB/commit/5652ec02e27e92f64c44bd53dc9e0a4ffd9dc720))
+* **main:** release 0.8.7 ([c6db88f](https://github.com/LogosITO/ICB/commit/c6db88f73bfb08dcba4167aafb5e8d39715e37cc))
+* **main:** release 0.8.7 ([771e01f](https://github.com/LogosITO/ICB/commit/771e01f6e9606475f2d7f5ffdcc12e1569eb66d3))
+* **main:** release 0.8.8 ([1e7f0bb](https://github.com/LogosITO/ICB/commit/1e7f0bb1e38e3033250c303988c0e973697085f1))
+* **main:** release 0.8.8 ([7688138](https://github.com/LogosITO/ICB/commit/7688138ac3639cf9997f5bae3fc7d6b44f954882))
+* **main:** release 0.8.9 ([d9f07c4](https://github.com/LogosITO/ICB/commit/d9f07c46018d58cc6f64c3d52f210a1aadf5f43b))
+* **main:** release 0.8.9 ([5dd1b5f](https://github.com/LogosITO/ICB/commit/5dd1b5f1d0b5b0cae8f8d04b41c42c02a137b21c))
