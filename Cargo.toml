@@ -3,6 +3,7 @@ name = "icb"
 version = "0.8.12"
 edition = "2021"
 publish = false
+license = "MIT"
 
 [workspace]
 resolver = "2"

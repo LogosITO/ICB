@@ -1,0 +1,25 @@
+[graph]
+targets = []
+
+[advisories]
+db-path = "~/.cargo/advisory-db"
+db-urls = ["https://github.com/rustsec/advisory-db"]
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-3-Clause",
+    "ISC",
+    "Unicode-DFS-2016"
+]
+
+confidence-threshold = 0.8
+
+exceptions = []
+
+private = { ignore = true }

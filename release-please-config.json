@@ -1,8 +1,9 @@
 {
   "release-type": "rust",
-  "include-component-in-tag": false,
-
-  "separate-pull-requests": false,
+  "include-component-in-tag": true,
+  "include-v-in-tag": true,
+  "group-pull-request-title-pattern": "chore${scope}: release ${version}",
+  "bootstrap-sha": "0c3ac360372c16790139548c261ed1279d923870",
 
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
@@ -10,7 +11,8 @@
     { "type": "perf", "section": "Performance Improvements" },
     { "type": "refactor", "section": "Refactoring" },
     { "type": "docs", "section": "Documentation" },
-    { "type": "chore", "section": "Chores" }
+    { "type": "chore", "section": "Chores" },
+    { "type": "test", "section": "Tests" }
   ],
 
   "packages": {

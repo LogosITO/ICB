@@ -5,12 +5,22 @@ repos:
         name: Rust fmt
         entry: cargo fmt --all -- --check
         language: system
-        types: [rust]
         pass_filenames: false
 
       - id: rust-clippy
         name: Rust clippy
         entry: cargo clippy --workspace -- -D warnings
         language: system
-        types: [rust]
+        pass_filenames: false
+
+      - id: rust-tests
+        name: Rust tests
+        entry: cargo test --workspace
+        language: system
+        pass_filenames: false
+
+      - id: cargo-deny
+        name: Cargo deny
+        entry: cargo deny check
+        language: system
         pass_filenames: false

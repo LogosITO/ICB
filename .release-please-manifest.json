@@ -6,5 +6,6 @@
   "crates/icb-clang": "0.9.0",
   "crates/icb-server": "0.9.0",
   "crates/icb-report": "0.9.0",
-  "crates/icb-cli": "0.9.0"
+  "crates/icb-cli": "0.9.0",
+  "crates/icb-rustc": "0.9.0"
 }
