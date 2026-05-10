@@ -1,5 +1,5 @@
 {
-  ".": "0.8.12",
+  ".": "0.9.0",
   "crates/icb-common": "0.9.0",
   "crates/icb-parser": "0.9.0",
   "crates/icb-graph": "0.9.0",

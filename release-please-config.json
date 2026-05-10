@@ -1,16 +1,16 @@
 {
   "release-type": "rust",
-  "include-component-in-tag": true,
-  "include-v-in-tags": true,
-  "tag-separator": "/",
+  "include-component-in-tag": false,
+
+  "separate-pull-requests": false,
 
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },
     { "type": "perf", "section": "Performance Improvements" },
+    { "type": "refactor", "section": "Refactoring" },
     { "type": "docs", "section": "Documentation" },
-    { "type": "chore", "section": "Chores" },
-    { "type": "refactor", "section": "Refactoring" }
+    { "type": "chore", "section": "Chores" }
   ],
 
   "packages": {

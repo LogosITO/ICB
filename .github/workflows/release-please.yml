@@ -16,7 +16,7 @@ concurrency:
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: Run Release Please
@@ -26,5 +26,5 @@ jobs:
 
           command: manifest
 
-          config-file: release-please-config.json
+          config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
