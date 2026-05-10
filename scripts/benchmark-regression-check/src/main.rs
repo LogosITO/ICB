@@ -9,10 +9,10 @@ fn main() -> Result<()> {
     let baseline: Value =
         serde_json::from_str(&fs::read_to_string("docs/bench-data/baseline.json")?)?;
 
-    let mut failed = false;
-
     let l = latest["crates"].as_object().unwrap();
     let b = baseline["crates"].as_object().unwrap();
+
+    let mut failed = false;
 
     for (krate, ldata) in l {
         if let Some(bdata) = b.get(krate) {
@@ -23,10 +23,12 @@ fn main() -> Result<()> {
                             let lv = lv.as_f64().unwrap();
                             let bv = bv.as_f64().unwrap();
 
-                            if lv > bv * (1.0 + THRESHOLD) {
+                            let delta = (lv - bv) / bv;
+
+                            if delta > THRESHOLD {
                                 println!(
-                                    "REGRESSION: {} / {} / {} : {} → {}",
-                                    krate, scenario, backend, bv, lv
+                                    "REGRESSION: {krate} / {scenario} / {backend} : {bv} → {lv} (+{:.2}%)",
+                                    delta * 100.0
                                 );
                                 failed = true;
                             }

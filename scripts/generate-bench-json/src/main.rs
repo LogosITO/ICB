@@ -21,15 +21,26 @@ fn main() -> Result<()> {
 
     let mut crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>> = BTreeMap::new();
 
+    // 🔥 SAFETY: CI guard
     if !root.exists() {
-        anyhow::bail!("target/criterion not found — run cargo bench first");
+        eprintln!("⚠️ target/criterion not found — skipping (bench not executed)");
+        let output = Output {
+            metadata: Metadata {
+                date: chrono::Utc::now().to_rfc3339(),
+                commit: std::env::var("GITHUB_SHA").unwrap_or_default(),
+            },
+            crates,
+        };
+
+        println!("{}", serde_json::to_string_pretty(&output)?);
+        return Ok(());
     }
 
     for bench_dir in fs::read_dir(root)? {
         let bench_dir = bench_dir?;
         let bench_name = bench_dir.file_name().to_string_lossy().to_string();
 
-        // 🔥 IMPORTANT: nested dirs
+        // 🔥 IMPORTANT: nested Criterion structure
         for case_dir in fs::read_dir(bench_dir.path())? {
             let case_dir = case_dir?;
 

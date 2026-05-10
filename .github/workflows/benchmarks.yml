@@ -17,8 +17,9 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
+      # 🔥 CRITICAL FIX: ensure benches actually run
       - name: Run benchmarks
-        run: cargo bench
+        run: cargo bench --workspace --all-features
 
       - name: Generate JSON
         run: |
