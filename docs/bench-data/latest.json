@@ -1,63 +1,63 @@
 {
   "metadata": {
-    "date": "2026-05-09T15:07:47.141690871+00:00",
-    "commit": "e664946feada9b1449bcfbf242192b92b80debac",
-    "version": "0.8.10"
+    "date": "2026-05-10T03:32:26.779331444+00:00",
+    "commit": "7986881e124e599a9e845c1db7343c2fecf9b9a8",
+    "version": "0.8.11"
   },
   "crates": {
     "icb-clang": {
       "Single Large File": {
-        "Clang": 42210000.0
+        "Clang": 38132000.0
       }
     },
     "icb-graph": {
       "Full Analysis": {
-        "graph": 376540.0
+        "graph": 372090.0
       },
       "Graph Build": {
-        "graph": 1316200.0
+        "graph": 1336600.0
       },
       "Resolve Calls": {
-        "graph": 1321400.0
+        "graph": 1333300.0
       }
     },
     "icb-parser": {
       "Deeply Nested": {
-        "tree-sitter cpp": 27449.0,
-        "tree-sitter go": 111460.0,
-        "tree-sitter ruby": 33176.0
+        "tree-sitter cpp": 27949.0,
+        "tree-sitter go": 114770.0,
+        "tree-sitter ruby": 33141.0
       },
       "Many Calls": {
-        "tree-sitter ruby": 176520000.0
+        "tree-sitter ruby": 184740000.0
       },
       "Single Large File": {
-        "tree-sitter cpp": 9456000.0,
-        "tree-sitter go": 7128400.0,
-        "tree-sitter ruby": 9582700.0
+        "tree-sitter cpp": 9963000.0,
+        "tree-sitter go": 7261200.0,
+        "tree-sitter ruby": 9372200.0
       }
     },
     "icb-rustc": {
       "Single Large File": {
-        "rustc": 10.325
+        "rustc": 11.688
       },
       "nested_10_levels": {
-        "rustc": 10.321
+        "rustc": 11.68
       },
       "nested_20_levels": {
-        "rustc": 10.325
+        "rustc": 11.696
       },
       "nested_5_levels": {
-        "rustc": 10.324
+        "rustc": 11.696
       }
     },
     "icb-server": {
       "Graph Serialization": {
-        "server": 232900.0
+        "server": 202840.0
       }
     },
     "unknown": {
       "analytics_2000_functions": {
-        "unknown": 615040.0
+        "unknown": 608620.0
       }
     }
   }
