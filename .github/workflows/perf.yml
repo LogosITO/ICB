@@ -1,15 +1,12 @@
-name: Benchmarks
+name: LLVM-Style Performance Gate
 
 on:
+  pull_request:
   push:
     branches: [main]
-  pull_request:
-
-permissions:
-  contents: write
 
 jobs:
-  bench:
+  perf:
     runs-on: ubuntu-latest
 
     steps:
@@ -20,27 +17,22 @@ jobs:
       - name: Run benchmarks
         run: cargo bench -- --nocapture | tee bench.txt
 
-      - name: Generate JSON
+      - name: Generate perf JSON
         run: |
           mkdir -p docs/bench-data
           cargo run -p generate-bench-json -- bench.txt > docs/bench-data/latest.json
 
-      - name: Load baseline
+      - name: Ensure baseline exists
         run: |
           if [ ! -f docs/bench-data/baseline.json ]; then
             cp docs/bench-data/latest.json docs/bench-data/baseline.json
           fi
 
-      - name: Regression check
-        run: cargo run -p benchmark-regression-check
+      - name: LLVM-level regression check
+        run: cargo run -p perf-engine
 
-      - name: Commit results
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name github-actions
-          git config user.email actions@github.com
-
-          git add docs/bench-data
-
-          git diff --cached --quiet || git commit -m "bench: update baseline"
-          git push
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: docs/bench-data

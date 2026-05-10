@@ -20,7 +20,7 @@ members = [
     "benches/icb-server",
     "benches/icb-parser",
     "benches/icb-rustc",
-    "scripts/generate-bench-json", "crates/icb-rustc", "benches/icb-rustc",
+    "scripts/generate-bench-json", "crates/icb-rustc", "benches/icb-rustc", "scripts/benchmark-regression-check", "scripts/perf-engine",
 ]
 
 [workspace.dependencies]
