@@ -1,8 +1,11 @@
 {
   "release-type": "rust",
-  "include-component-in-tag": true,
+
+  "include-component-in-tag": false,
   "include-v-in-tag": true,
-  "group-pull-request-title-pattern": "chore${scope}: release ${version}",
+
+  "group-pull-request-title-pattern": "chore: release ${version}",
+
   "bootstrap-sha": "0c3ac360372c16790139548c261ed1279d923870",
 
   "changelog-sections": [
@@ -16,33 +19,8 @@
   ],
 
   "packages": {
-    "crates/icb-common": {
-      "component": "icb-common",
-      "changelog-path": "crates/icb-common/CHANGELOG.md"
-    },
-    "crates/icb-parser": {
-      "component": "icb-parser",
-      "changelog-path": "crates/icb-parser/CHANGELOG.md"
-    },
-    "crates/icb-graph": {
-      "component": "icb-graph",
-      "changelog-path": "crates/icb-graph/CHANGELOG.md"
-    },
-    "crates/icb-clang": {
-      "component": "icb-clang",
-      "changelog-path": "crates/icb-clang/CHANGELOG.md"
-    },
-    "crates/icb-server": {
-      "component": "icb-server",
-      "changelog-path": "crates/icb-server/CHANGELOG.md"
-    },
-    "crates/icb-report": {
-      "component": "icb-report",
-      "changelog-path": "crates/icb-report/CHANGELOG.md"
-    },
-    "crates/icb-cli": {
-      "component": "icb-cli",
-      "changelog-path": "crates/icb-cli/CHANGELOG.md"
+    ".": {
+      "release-type": "rust"
     }
   }
 }
