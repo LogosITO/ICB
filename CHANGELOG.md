@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/LogosITO/ICB/compare/v0.10.1...v0.10.2) (2026-05-10)
+
+
+### Bug Fixes
+
+* **bench:** unify benchmark system across all crates ([6615a8c](https://github.com/LogosITO/ICB/commit/6615a8c99982e5a43f2e0758e1ddeee0060ff2f7))
+
 ## [0.10.1](https://github.com/LogosITO/ICB/compare/v0.10.0...v0.10.1) (2026-05-10)
 
 
