@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.5](https://github.com/LogosITO/ICB/compare/v0.10.4...v0.10.5) (2026-05-10)
+
+
+### Bug Fixes
+
+* **benches:** safe and production-ready CI ([33fcbda](https://github.com/LogosITO/ICB/commit/33fcbda74b75d23e5423a3e9799ce8afda9b89b6))
+
 ## [0.10.4](https://github.com/LogosITO/ICB/compare/v0.10.3...v0.10.4) (2026-05-10)
 
 
