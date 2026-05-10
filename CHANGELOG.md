@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.4](https://github.com/LogosITO/ICB/compare/v0.10.3...v0.10.4) (2026-05-10)
+
+
+### Bug Fixes
+
+* **benches:** another try ([7f7d79c](https://github.com/LogosITO/ICB/commit/7f7d79c617c246d61367ab3723e177eec1c4bad5))
+
 ## [0.10.3](https://github.com/LogosITO/ICB/compare/v0.10.2...v0.10.3) (2026-05-10)
 
 
