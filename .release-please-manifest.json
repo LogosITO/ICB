@@ -1,3 +1,10 @@
 {
-  ".": "0.8.12"
+  ".": "0.8.12",
+  "crates/icb-common": "0.8.12",
+  "crates/icb-parser": "0.8.12",
+  "crates/icb-graph": "0.8.12",
+  "crates/icb-clang": "0.8.12",
+  "crates/icb-server": "0.8.12",
+  "crates/icb-report": "0.8.12",
+  "crates/icb-cli": "0.8.12"
 }
