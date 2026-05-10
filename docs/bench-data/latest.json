@@ -1,55 +1,55 @@
 {
   "metadata": {
-    "date": "2026-05-10T15:44:40.284700404+00:00",
-    "commit": "b1025c04e8ebc09307682d9da1e1d5e58690bc31",
-    "version": "0.10.0"
+    "date": "2026-05-10T15:50:24.381030420+00:00",
+    "commit": "d3ca2f475df8ab172a6af0d11c5aff69620f9e02",
+    "version": "0.10.1"
   },
   "crates": {
     "icb-clang": {
       "Single Large File": {
-        "clang": 58981000.0
+        "clang": 48645000.0
       }
     },
     "icb-graph": {
       "Full Analysis": {
-        "graph": 371100.0
+        "graph": 369560.0
       },
       "Graph Build": {
-        "graph": 1323000.0
+        "graph": 1269300.0
       },
       "Resolve Calls": {
-        "graph": 1274600.0
+        "graph": 1267400.0
       }
     },
     "icb-parser": {
       "Deeply Nested": {
-        "tree-sitter cpp": 27545.0,
-        "tree-sitter go": 114700.0,
-        "tree-sitter ruby": 33129.0
+        "tree-sitter cpp": 28164.0,
+        "tree-sitter go": 112820.0,
+        "tree-sitter ruby": 33104.0
       },
       "Many Calls": {
-        "tree-sitter ruby": 178040000.0
+        "tree-sitter ruby": 172080000.0
       },
       "Single Large File": {
-        "tree-sitter cpp": 9869900.0,
-        "tree-sitter go": 7384300.0,
-        "tree-sitter ruby": 9371800.0
+        "tree-sitter cpp": 9665700.0,
+        "tree-sitter go": 7150900.0,
+        "tree-sitter ruby": 9430700.0
       }
     },
     "icb-rustc": {
       "Deeply Nested": {
-        "rustc": 139310.0
+        "rustc": 203150.0
       },
       "Single Large File": {
-        "rustc": 637920.0
+        "rustc": 639500.0
       }
     },
     "icb-server": {
       "Graph Serialization": {
-        "server": 211610.0
+        "server": 232000.0
       },
       "Metrics": {
-        "server": 646000.0
+        "server": 614520.0
       }
     }
   }
