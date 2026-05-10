@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.6](https://github.com/LogosITO/ICB/compare/v0.10.5...v0.10.6) (2026-05-10)
+
+
+### Bug Fixes
+
+* add LLVM/Clang dependencies and upgrade to 8-core runner for benchmarks ([f58e1e8](https://github.com/LogosITO/ICB/commit/f58e1e8dcd269bf13a82cb4ba4e7dc16d5cd16d2))
+* install libclang dependencies for benchmark workflow ([9b64ae1](https://github.com/LogosITO/ICB/commit/9b64ae1b58a831d29b2b3e6515aadc7d427c0162))
+
 ## [0.10.5](https://github.com/LogosITO/ICB/compare/v0.10.4...v0.10.5) (2026-05-10)
 
 
