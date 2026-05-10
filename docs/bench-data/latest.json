@@ -1,63 +1,55 @@
 {
   "metadata": {
-    "date": "2026-05-10T03:32:26.779331444+00:00",
-    "commit": "7986881e124e599a9e845c1db7343c2fecf9b9a8",
-    "version": "0.8.11"
+    "date": "2026-05-10T14:57:04.328301418+00:00",
+    "commit": "801c2e1dbe10186033279998087cef53e8dfb6b8",
+    "version": "0.8.12"
   },
   "crates": {
     "icb-clang": {
       "Single Large File": {
-        "Clang": 38132000.0
+        "clang": 58705000.0
       }
     },
     "icb-graph": {
       "Full Analysis": {
-        "graph": 372090.0
+        "graph": 356520.0
       },
       "Graph Build": {
-        "graph": 1336600.0
+        "graph": 1223900.0
       },
       "Resolve Calls": {
-        "graph": 1333300.0
+        "graph": 1215200.0
       }
     },
     "icb-parser": {
       "Deeply Nested": {
-        "tree-sitter cpp": 27949.0,
-        "tree-sitter go": 114770.0,
-        "tree-sitter ruby": 33141.0
+        "tree-sitter cpp": 27280.0,
+        "tree-sitter go": 112100.0,
+        "tree-sitter ruby": 32627.000000000004
       },
       "Many Calls": {
-        "tree-sitter ruby": 184740000.0
+        "tree-sitter ruby": 173670000.0
       },
       "Single Large File": {
-        "tree-sitter cpp": 9963000.0,
-        "tree-sitter go": 7261200.0,
-        "tree-sitter ruby": 9372200.0
+        "tree-sitter cpp": 9563800.0,
+        "tree-sitter go": 7175800.0,
+        "tree-sitter ruby": 9304600.0
       }
     },
     "icb-rustc": {
+      "Deeply Nested": {
+        "rustc": 11.689
+      },
       "Single Large File": {
-        "rustc": 11.688
-      },
-      "nested_10_levels": {
-        "rustc": 11.68
-      },
-      "nested_20_levels": {
-        "rustc": 11.696
-      },
-      "nested_5_levels": {
-        "rustc": 11.696
+        "rustc": 11.683
       }
     },
     "icb-server": {
       "Graph Serialization": {
-        "server": 202840.0
-      }
-    },
-    "unknown": {
-      "analytics_2000_functions": {
-        "unknown": 608620.0
+        "server": 236920.0
+      },
+      "Metrics": {
+        "server": 618040.0
       }
     }
   }
