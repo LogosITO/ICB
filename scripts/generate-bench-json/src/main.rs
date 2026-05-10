@@ -22,6 +22,8 @@ fn main() -> anyhow::Result<()> {
 
         for i in 0..lines.len() {
             if let Some((name, ns)) = parse_benchmark(&lines, i) {
+                eprintln!("Parsed benchmark: {} -> {} ns", name, ns);
+
                 let (crate_name, scenario, backend) = classify(&name);
 
                 crates
@@ -62,14 +64,6 @@ struct Metadata {
 
 fn parse_benchmark(lines: &[String], index: usize) -> Option<(String, f64)> {
     let line = lines.get(index)?.trim();
-
-    // Ищем строку:
-    //
-    // single_large_file_100_funcs
-    //
-    // следующая:
-    //
-    // time: [12.345 us 12.678 us 13.012 us]
 
     if line.is_empty() {
         return None;
@@ -114,24 +108,39 @@ fn parse_benchmark(lines: &[String], index: usize) -> Option<(String, f64)> {
 }
 
 fn classify(name: &str) -> (String, String, String) {
-    // icb-clang
+    if name.starts_with("rustc_") {
+        let scenario = if name.contains("single_large_file") {
+            "Single Large File"
+        } else if name.contains("deeply_nested") {
+            "Deeply Nested"
+        } else if name.contains("many_calls") {
+            "Many Calls"
+        } else if name.contains("real_project") {
+            "Real Project"
+        } else {
+            name
+        };
+
+        return ("icb-rustc".into(), scenario.to_string(), "rustc".into());
+    }
+
     if name.starts_with("single_large_file") {
         return (
             "icb-clang".into(),
             "Single Large File".into(),
-            "Clang".into(),
+            "clang".into(),
         );
     }
 
     if name.starts_with("deeply_nested") {
-        return ("icb-clang".into(), "Deeply Nested".into(), "Clang".into());
+        return ("icb-clang".into(), "Deeply Nested".into(), "clang".into());
     }
 
     if name.starts_with("many_calls") {
-        return ("icb-clang".into(), "Many Calls".into(), "Clang".into());
+        return ("icb-clang".into(), "Many Calls".into(), "clang".into());
     }
 
-    if name.starts_with("system_headers_") {
+    if name.starts_with("system_headers") {
         let backend = if name.ends_with("_on") {
             "with system"
         } else {
@@ -141,7 +150,6 @@ fn classify(name: &str) -> (String, String, String) {
         return ("icb-clang".into(), "System Headers".into(), backend.into());
     }
 
-    // icb-graph
     if name.starts_with("build_graph") {
         return ("icb-graph".into(), "Graph Build".into(), "graph".into());
     }
@@ -154,8 +162,7 @@ fn classify(name: &str) -> (String, String, String) {
         return ("icb-graph".into(), "Full Analysis".into(), "graph".into());
     }
 
-    // icb-server
-    if name.starts_with("analytics_metric")
+    if name.starts_with("analytics")
         || name.starts_with("function_metrics")
         || name.starts_with("class_metrics")
         || name.starts_with("file_metrics")
@@ -163,7 +170,7 @@ fn classify(name: &str) -> (String, String, String) {
         return ("icb-server".into(), "Metrics".into(), "server".into());
     }
 
-    if name.starts_with("json_serialize") || name.starts_with("graph_serialization") {
+    if name.starts_with("graph_serialization") || name.starts_with("json_serialize") {
         return (
             "icb-server".into(),
             "Graph Serialization".into(),
@@ -171,7 +178,10 @@ fn classify(name: &str) -> (String, String, String) {
         );
     }
 
-    if name.starts_with("subgraph_") || name.starts_with("focal_graph") {
+    if name.starts_with("graph_subgraph")
+        || name.starts_with("subgraph")
+        || name.starts_with("focal_graph")
+    {
         return (
             "icb-server".into(),
             "Subgraph Extraction".into(),
@@ -179,15 +189,6 @@ fn classify(name: &str) -> (String, String, String) {
         );
     }
 
-    if name.starts_with("server_pipeline") || name.starts_with("real_project_pipeline") {
-        return (
-            "icb-server".into(),
-            "Server Pipeline".into(),
-            "server".into(),
-        );
-    }
-
-    // icb-parser
     if name.starts_with("ts_") {
         if let Some(rest) = name.strip_prefix("ts_") {
             let parts: Vec<&str> = rest.splitn(2, '_').collect();
@@ -196,53 +197,26 @@ fn classify(name: &str) -> (String, String, String) {
                 let lang = parts[0];
                 let scenario_code = parts[1];
 
-                let scenario = match () {
-                    _ if scenario_code.starts_with("large_file")
-                        || scenario_code.starts_with("single_large_file") =>
-                    {
-                        "Single Large File"
-                    }
-
-                    _ if scenario_code.starts_with("deeply_nested") => "Deeply Nested",
-
-                    _ if scenario_code.starts_with("many_calls") => "Many Calls",
-
-                    _ if scenario_code.starts_with("real_project") => "Real Project",
-
-                    _ => scenario_code,
-                };
-
-                let backend = format!("tree-sitter {}", lang);
-
-                return ("icb-parser".into(), scenario.to_string(), backend);
-            }
-        }
-    }
-
-    // icb-rustc
-    if name.starts_with("rustc_") {
-        let rest = name.strip_prefix("rustc_").unwrap();
-
-        if let Some(first_underscore) = rest.find('_') {
-            let scenario_code = &rest[first_underscore + 1..];
-
-            let scenario = match () {
-                _ if scenario_code.starts_with("large_file")
-                    || scenario_code.starts_with("single_large_file") =>
+                let scenario = if scenario_code.contains("single_large_file")
+                    || scenario_code.contains("large_file")
                 {
                     "Single Large File"
-                }
+                } else if scenario_code.contains("deeply_nested") {
+                    "Deeply Nested"
+                } else if scenario_code.contains("many_calls") {
+                    "Many Calls"
+                } else if scenario_code.contains("real_project") {
+                    "Real Project"
+                } else {
+                    scenario_code
+                };
 
-                _ if scenario_code.starts_with("deeply_nested") => "Deeply Nested",
-
-                _ if scenario_code.starts_with("many_calls") => "Many Calls",
-
-                _ if scenario_code.starts_with("real_project") => "Real Project",
-
-                _ => scenario_code,
-            };
-
-            return ("icb-rustc".into(), scenario.to_string(), "rustc".into());
+                return (
+                    "icb-parser".into(),
+                    scenario.to_string(),
+                    format!("tree-sitter {}", lang),
+                );
+            }
         }
     }
 

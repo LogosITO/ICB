@@ -9,13 +9,20 @@ use tempfile::Builder;
 mod common;
 
 fn bench(c: &mut Criterion) {
-    let sizes = [100, 500, 2000];
+    // Реалистичные размеры
+    let sizes = [100, 1000, 5000];
+
     let args: Vec<String> = vec!["--edition".to_string(), "2021".to_string()];
 
     for &size in &sizes {
         let source = common::build_large_flat_source(size);
-        // icb-rustc требует реальный файл, поэтому создадим временный
-        let tmp = Builder::new().suffix(".rs").tempfile().unwrap();
+
+        let tmp = Builder::new()
+            .prefix("icb_rustc_large_")
+            .suffix(".rs")
+            .tempfile()
+            .unwrap();
+
         fs::write(tmp.path(), &source).unwrap();
 
         c.bench_function(&format!("rustc_single_large_file_{}_funcs", size), |b| {

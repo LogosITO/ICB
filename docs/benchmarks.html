@@ -1,97 +1,50 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICB Benchmarks</title>
-    <style>
-        :root {
-            --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
-            --border: #333; --hover: #222; --header: #888;
-            --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
-            --radius: 6px;
-        }
-        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
-        header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); }
-        h1 { margin: 0 0 0.25rem; font-size: 1.5rem; color: var(--accent); }
-        .meta { font-size: 0.8rem; color: var(--header); display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.3rem; }
-        nav { display: flex; gap: 2px; margin: 1rem 2rem; flex-wrap: wrap; }
-        nav a {
-            padding: 0.5rem 1rem; text-decoration: none; color: var(--text);
-            background: var(--surface); border-bottom: 2px solid transparent;
-            transition: all 0.2s; font-size: 0.85rem; border-radius: var(--radius) var(--radius) 0 0;
-        }
-        nav a.active, nav a:hover {
-            border-bottom-color: var(--accent); color: white;
-            background: #1e1e1e; box-shadow: 0 -2px 6px rgba(0,0,0,0.3);
-        }
-        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
-        .crate-section {
-            margin: 2rem 0;
-        }
-        .crate-title {
-            font-size: 1.3rem; font-weight: 600; color: var(--accent);
-            margin-bottom: 1rem; padding-bottom: 0.3rem;
-            border-bottom: 1px solid var(--border);
-        }
-        .scenario-block {
-            background: var(--surface); border: 1px solid var(--border);
-            border-radius: var(--radius); padding: 1rem; margin: 1rem 0;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
-        }
-        .scenario-title {
-            font-size: 1rem; font-weight: 500; color: var(--accent);
-            margin-bottom: 0.5rem;
-        }
-        table { width: 100%; border-collapse: collapse; margin-top: 0.5rem; }
-        th, td { padding: 0.4rem 0.8rem; text-align: left; border-bottom: 1px solid var(--border); font-size: 0.85rem; }
-        th { color: var(--header); font-weight: 500; }
-        tbody tr:nth-child(even) { background: rgba(255,255,255,0.03); }
-        tbody tr:hover { background: var(--hover); }
-        .time {
-            font-family: var(--mono); text-align: right; white-space: nowrap;
-            width: 110px; color: var(--accent);
-        }
-        .bar-cell { width: 40%; }
-        .bar {
-            height: 5px; background: var(--accent); border-radius: 2px;
-            min-width: 2px; transition: width 0.3s;
-        }
-        .loader { text-align: center; padding: 3rem; color: var(--header); }
-        .error { color: #c44; }
-    </style>
-</head>
-<body>
-<header>
-    <h1>ICB Benchmarks</h1>
-    <div id="meta" class="meta"></div>
-    <nav id="tabNav"></nav>
-</header>
-<div class="container">
-    <div id="content" class="loader">Loading benchmark data…</div>
-</div>
-
 <script>
+    function formatTime(ns) {
+        if (ns < 1000) {
+            return ns.toFixed(2) + ' ns';
+        }
+
+        if (ns < 1_000_000) {
+            return (ns / 1_000).toFixed(2) + ' µs';
+        }
+
+        if (ns < 1_000_000_000) {
+            return (ns / 1_000_000).toFixed(2) + ' ms';
+        }
+
+        return (ns / 1_000_000_000).toFixed(2) + ' s';
+    }
+
     async function loadData() {
         try {
             const resp = await fetch('bench-data/latest.json');
-            if (!resp.ok) throw new Error('Network error');
+
+            if (!resp.ok) {
+                throw new Error('Network error');
+            }
+
             const json = await resp.json();
-            window.__data = json;
+
             buildUI(json);
+
         } catch (e) {
-            document.getElementById('content').innerHTML = `<div class="error">Failed to load data: ${e.message}</div>`;
+            document.getElementById('content').innerHTML =
+                `<div class="error">Failed to load data: ${e.message}</div>`;
         }
     }
 
     function buildUI(data) {
         const crates = data.crates || {};
         const meta = data.metadata || {};
+
         document.getElementById('meta').innerHTML =
-            `<span>Generated: ${meta.date || '?'}</span><span>Commit: ${meta.commit.slice(0,7) || '?'}</span><span>Version: ${meta.version || '?'}</span>`;
+            `<span>Generated: ${meta.date || '?'}</span>
+         <span>Commit: ${(meta.commit || '?').slice(0, 7)}</span>
+         <span>Version: ${meta.version || '?'}</span>`;
 
         const nav = document.getElementById('tabNav');
         const content = document.getElementById('content');
+
         const crateNames = Object.keys(crates);
 
         if (crateNames.length === 0) {
@@ -99,53 +52,89 @@
             return;
         }
 
-        // Создаём вкладки по крейтам
+        nav.innerHTML = '';
+
         crateNames.forEach((crate, idx) => {
             const a = document.createElement('a');
+
             a.href = `#${crate}`;
             a.textContent = crate;
-            if (idx === 0) a.classList.add('active');
+
+            if (idx === 0) {
+                a.classList.add('active');
+            }
+
             a.addEventListener('click', e => {
                 e.preventDefault();
-                document.querySelectorAll('#tabNav a').forEach(el => el.classList.remove('active'));
+
+                document.querySelectorAll('#tabNav a')
+                    .forEach(el => el.classList.remove('active'));
+
                 a.classList.add('active');
+
                 renderCrate(crate, crates[crate]);
             });
+
             nav.appendChild(a);
         });
 
-        // Показать первый крейт
         renderCrate(crateNames[0], crates[crateNames[0]]);
     }
 
     function renderCrate(crateName, scenarios) {
         const content = document.getElementById('content');
-        let html = `<div class="crate-section"><div class="crate-title">${crateName}</div>`;
+
+        let html =
+            `<div class="crate-section">
+            <div class="crate-title">${crateName}</div>`;
 
         for (const [scenarioName, backends] of Object.entries(scenarios)) {
             const times = Object.values(backends);
             const maxTime = Math.max(...times);
-            html += `<div class="scenario-block"><div class="scenario-title">${scenarioName}</div><table><thead><tr><th>Backend</th><th>Time</th><th>Relative</th></tr></thead><tbody>`;
+
+            html += `
+            <div class="scenario-block">
+                <div class="scenario-title">${scenarioName}</div>
+
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Backend</th>
+                            <th>Time</th>
+                            <th>Relative</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+
             for (const [backend, timeNs] of Object.entries(backends)) {
-                const timeMs = timeNs / 1e6;
-                const display = timeMs >= 1000
-                    ? (timeMs / 1000).toFixed(2) + ' s'
-                    : timeMs.toFixed(2) + ' ms';
-                const pct = Math.round((timeNs / maxTime) * 100);
-                html += `<tr>
+                const pct = Math.max(
+                    Math.round((timeNs / maxTime) * 100),
+                    1
+                );
+
+                html += `
+                <tr>
                     <td>${backend}</td>
-                    <td class="time">${display}</td>
-                    <td class="bar-cell"><div class="bar" style="width:${Math.max(pct, 1)}%"></div></td>
-                </tr>`;
+                    <td class="time">${formatTime(timeNs)}</td>
+                    <td class="bar-cell">
+                        <div class="bar" style="width:${pct}%"></div>
+                    </td>
+                </tr>
+            `;
             }
-            html += '</tbody></table></div>';
+
+            html += `
+                    </tbody>
+                </table>
+            </div>
+        `;
         }
 
         html += '</div>';
+
         content.innerHTML = html;
     }
 
     window.addEventListener('DOMContentLoaded', loadData);
 </script>
-</body>
-</html>

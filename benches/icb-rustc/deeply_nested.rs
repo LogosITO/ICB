@@ -9,12 +9,20 @@ use tempfile::Builder;
 mod common;
 
 fn bench(c: &mut Criterion) {
-    let depths = [5, 10, 20];
+    // Более серьёзные глубины
+    let depths = [10, 50, 100];
+
     let args: Vec<String> = vec!["--edition".to_string(), "2021".to_string()];
 
     for &depth in &depths {
         let source = common::build_deeply_nested_source(depth);
-        let tmp = Builder::new().suffix(".rs").tempfile().unwrap();
+
+        let tmp = Builder::new()
+            .prefix("icb_rustc_nested_")
+            .suffix(".rs")
+            .tempfile()
+            .unwrap();
+
         fs::write(tmp.path(), &source).unwrap();
 
         c.bench_function(&format!("rustc_deeply_nested_{}_levels", depth), |b| {
