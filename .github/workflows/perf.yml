@@ -1,4 +1,4 @@
-name: LLVM-Style Performance Gate
+name: Performance Gate
 
 on:
   pull_request:

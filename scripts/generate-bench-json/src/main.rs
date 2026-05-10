@@ -8,28 +8,39 @@ fn main() -> anyhow::Result<()> {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        anyhow::bail!("Usage: {} <file1> [file2 ...]", args[0]);
+        anyhow::bail!("Usage: {} <bench.txt>", args[0]);
     }
+
+    let file = fs::File::open(&args[1])?;
+    let lines: Vec<String> = io::BufReader::new(file).lines().collect::<Result<_, _>>()?;
 
     let mut crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>> = BTreeMap::new();
 
-    for path in &args[1..] {
-        let file = fs::File::open(path)?;
-        let lines: Vec<String> = io::BufReader::new(file).lines().collect::<Result<_, _>>()?;
+    let mut current_name: Option<String> = None;
 
-        let mut i = 0;
-        while i + 1 < lines.len() {
-            if let Some((name, ns)) = parse_benchmark(&lines, i) {
-                let (krate, scenario, backend) = classify(&name);
+    for line in lines {
+        let line = line.trim();
 
-                crates
-                    .entry(krate)
-                    .or_default()
-                    .entry(scenario)
-                    .or_default()
-                    .insert(backend, ns);
+        // capture benchmark name
+        if is_benchmark_name(line) {
+            current_name = Some(line.to_string());
+            continue;
+        }
+
+        // parse timing line
+        if line.contains("time:") {
+            if let Some(name) = &current_name {
+                if let Some(ns) = parse_time(line) {
+                    let (krate, scenario, backend) = classify(name);
+
+                    crates
+                        .entry(krate)
+                        .or_default()
+                        .entry(scenario)
+                        .or_default()
+                        .insert(backend, ns);
+                }
             }
-            i += 1;
         }
     }
 
@@ -46,49 +57,6 @@ fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Serialize)]
-struct Output {
-    metadata: Metadata,
-    crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
-}
-
-#[derive(Serialize)]
-struct Metadata {
-    date: String,
-    commit: String,
-}
-
-fn parse_benchmark(lines: &[String], index: usize) -> Option<(String, f64)> {
-    let line = lines.get(index)?.trim();
-    let next = lines.get(index + 1)?.trim();
-
-    if line.is_empty() || !next.starts_with("time:") {
-        return None;
-    }
-
-    let start = next.find('[')?;
-    let end = next.find(']')?;
-    let values = &next[start + 1..end];
-
-    let parts: Vec<&str> = values.split_whitespace().collect();
-    if parts.len() < 2 {
-        return None;
-    }
-
-    let value: f64 = parts[0].replace([',', '_'], "").parse().ok()?;
-    let unit = parts[1];
-
-    let ns = match unit {
-        "ns" => value,
-        "us" | "µs" => value * 1_000.0,
-        "ms" => value * 1_000_000.0,
-        "s" => value * 1_000_000_000.0,
-        _ => return None,
-    };
-
-    Some((line.to_string(), ns))
-}
-
 fn classify(name: &str) -> (String, String, String) {
     if name.contains("clang") {
         ("icb-clang".into(), "clang".into(), "clang".into())
@@ -101,6 +69,50 @@ fn classify(name: &str) -> (String, String, String) {
     } else if name.contains("server") {
         ("icb-server".into(), "server".into(), "server".into())
     } else {
-        ("unknown".into(), name.into(), "unknown".into())
+        ("unknown".into(), name.to_string(), "unknown".into())
     }
+}
+
+fn is_benchmark_name(line: &str) -> bool {
+    line.starts_with("ts_")
+        || line.starts_with("single_large_file")
+        || line.starts_with("deeply_nested")
+        || line.starts_with("many_calls")
+        || line.starts_with("rustc_")
+        || line.starts_with("build_graph")
+        || line.starts_with("resolve_calls")
+        || line.starts_with("full_analysis")
+}
+
+fn parse_time(line: &str) -> Option<f64> {
+    let line = line.replace("[", "").replace("]", "");
+
+    let parts: Vec<&str> = line.split_whitespace().collect();
+
+    let idx = parts.iter().position(|p| *p == "time:")?;
+
+    let value: f64 = parts.get(idx + 1)?.parse().ok()?;
+    let unit = parts.get(idx + 2)?;
+
+    let ns = match *unit {
+        "ns" => value,
+        "us" | "µs" => value * 1_000.0,
+        "ms" => value * 1_000_000.0,
+        "s" => value * 1_000_000_000.0,
+        _ => return None,
+    };
+
+    Some(ns)
+}
+
+#[derive(Serialize)]
+struct Output {
+    metadata: Metadata,
+    crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
+}
+
+#[derive(Serialize)]
+struct Metadata {
+    date: String,
+    commit: String,
 }
