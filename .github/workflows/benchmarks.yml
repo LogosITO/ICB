@@ -10,27 +10,33 @@ permissions:
 
 jobs:
   bench:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest-8-cores
 
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
 
-      # 🔥 CRITICAL FIX: Install LLVM/Clang dependencies
-      - name: Install dependencies
+      - name: Install LLVM and Clang
         run: |
           sudo apt-get update
-          sudo apt-get install -y libclang-dev llvm-dev
+          sudo apt-get install -y llvm-18 libllvm18 libclang-18-dev clang-18
+          sudo ln -sf /usr/lib/llvm-18/lib/libclang.so.1 /usr/lib/x86_64-linux-gnu/libclang.so || true
 
-      # 🔥 CRITICAL FIX: ensure benches actually run
       - name: Run benchmarks
         run: cargo bench --workspace --all-features
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-18/lib
+          CARGO_BUILD_JOBS: 8
 
       - name: Generate JSON
         run: |
           mkdir -p docs/bench-data
           cargo run -p generate-bench-json > docs/bench-data/latest.json
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-18/lib
 
       - name: Load baseline
         run: |
@@ -40,14 +46,14 @@ jobs:
 
       - name: Regression check
         run: cargo run -p benchmark-regression-check
+        env:
+          LIBCLANG_PATH: /usr/lib/llvm-18/lib
 
       - name: Commit results
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.name github-actions
           git config user.email actions@github.com
-
           git add docs/bench-data
-
           git diff --cached --quiet || git commit -m "bench: update baseline"
           git push
