@@ -18,12 +18,12 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
       - name: Run benchmarks
-        run: cargo bench -- --nocapture | tee bench.txt
+        run: cargo bench
 
       - name: Generate JSON
         run: |
           mkdir -p docs/bench-data
-          cargo run -p generate-bench-json -- bench.txt > docs/bench-data/latest.json
+          cargo run -p generate-bench-json > docs/bench-data/latest.json
 
       - name: Load baseline
         run: |
