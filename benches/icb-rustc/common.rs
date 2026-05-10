@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Synthetic Rust source generators for icb-rustc benchmarks.
 
 /// Large flat file with many independent functions.
