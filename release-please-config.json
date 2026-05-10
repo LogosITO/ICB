@@ -1,58 +1,72 @@
 {
+  "release-type": "rust",
+
+  "changelog-path": "CHANGELOG.md",
+
   "changelog-sections": [
     { "type": "feat", "section": "Features" },
     { "type": "fix", "section": "Bug Fixes" },
-    { "type": "chore", "section": "Chores" },
+    { "type": "perf", "section": "Performance Improvements" },
+    { "type": "refactor", "section": "Refactoring" },
     { "type": "docs", "section": "Documentation" },
-    { "type": "perf", "section": "Performance Improvements" }
+    { "type": "test", "section": "Tests" },
+    { "type": "chore", "section": "Chores" },
+    { "type": "ci", "section": "CI/CD" }
   ],
+
   "packages": {
     "crates/icb-common": {
       "component": "icb-common",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-common/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+
     "crates/icb-parser": {
       "component": "icb-parser",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-parser/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+
     "crates/icb-graph": {
       "component": "icb-graph",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-graph/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+
     "crates/icb-clang": {
       "component": "icb-clang",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-clang/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+
     "crates/icb-server": {
       "component": "icb-server",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-server/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+
     "crates/icb-report": {
       "component": "icb-report",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-report/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     },
+
     "crates/icb-cli": {
       "component": "icb-cli",
-      "changelog-path": "CHANGELOG.md",
       "release-type": "rust",
+      "changelog-path": "crates/icb-cli/CHANGELOG.md",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true
     }
