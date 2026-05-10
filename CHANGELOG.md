@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/LogosITO/ICB/compare/v0.10.2...v0.10.3) (2026-05-10)
+
+
+### Bug Fixes
+
+* **benches:** generate-bench-json script ([896f122](https://github.com/LogosITO/ICB/commit/896f1227496bb7aea850b418e3fd327d92d2634c))
+
 ## [0.10.2](https://github.com/LogosITO/ICB/compare/v0.10.1...v0.10.2) (2026-05-10)
 
 
