@@ -2,7 +2,8 @@ name: Release Please
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -10,7 +11,7 @@ permissions:
 
 concurrency:
   group: release-please
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   release-please:

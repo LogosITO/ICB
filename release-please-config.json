@@ -1,8 +1,8 @@
 {
   "release-type": "rust",
 
-  "include-component-in-tag": false,
   "include-v-in-tag": true,
+  "include-component-in-tag": false,
 
   "group-pull-request-title-pattern": "chore: release ${version}",
 
@@ -14,8 +14,8 @@
     { "type": "perf", "section": "Performance Improvements" },
     { "type": "refactor", "section": "Refactoring" },
     { "type": "docs", "section": "Documentation" },
-    { "type": "chore", "section": "Chores" },
-    { "type": "test", "section": "Tests" }
+    { "type": "test", "section": "Tests" },
+    { "type": "chore", "section": "Chores" }
   ],
 
   "packages": {
