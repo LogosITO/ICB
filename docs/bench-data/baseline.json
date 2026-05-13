@@ -6,10 +6,10 @@
   "crates": {
     "icb-graph": {
       "Build Graph": {
-        "rust": 293834.1431029425
+        "rust": 293839.1431029425
       },
       "Full Analysis": {
-        "rust": 87081.82187299333
+        "rust": 87085.82187299333
       },
       "Resolve Calls": {
         "rust": 294178.1808565726
