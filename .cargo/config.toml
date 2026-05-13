@@ -1,2 +1,5 @@
+[unstable]
+rustc-private = true
+
 [env]
 LIBCLANG_PATH = { value = "lib", relative = true }

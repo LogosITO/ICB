@@ -15,8 +15,6 @@ mod nightly_impl {
     use rustc_middle::ty::TyCtxt;
     use rustc_span::source_map::SourceMap;
     use rustc_span::Span;
-    use std::collections::hash_map::DefaultHasher;
-    use std::hash::{Hash, Hasher};
 
     pub fn run(
         tcx: TyCtxt<'_>,
@@ -95,7 +93,6 @@ mod nightly_impl {
                             .unwrap_or_else(|| "?".into())
                     );
                     let idx = self.push_node(NodeKind::Class, name, item.span, usr);
-                    // visit methods inside impl
                     for &item_id in &impl_.items {
                         if let Some(method) = self.tcx.hir().item(item_id) {
                             self.visit_item(method);
@@ -122,8 +119,8 @@ mod nightly_impl {
                         self.walk_expr(a, parent_idx);
                     }
                 }
-                hir::ExprKind::MethodCall(_, _, ref args, _) => {
-                    let name = resolve_call_name(&expr, self.source_map);
+                hir::ExprKind::MethodCall(ref segment, _, ref args, _) => {
+                    let name = segment.ident.name.to_string();
                     if !name.is_empty() {
                         self.push_node(NodeKind::CallSite, name, expr.span, None);
                     }
@@ -142,7 +139,6 @@ mod nightly_impl {
                     }
                 }
                 _ => {
-                    // recursively visit sub‑expressions
                     expr.walk(|e| {
                         self.walk_expr(e, parent_idx);
                         true
@@ -182,9 +178,6 @@ mod nightly_impl {
     }
 }
 
-/// Public visitor entry point.
-///
-/// On non‑nightly builds this returns an empty vector.
 pub fn collect_facts(_tcx: (), _hir_map: (), _source_map: ()) -> Result<Vec<RawNode>> {
     #[cfg(feature = "nightly")]
     {

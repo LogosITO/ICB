@@ -1,9 +1,12 @@
-name: Performance Gate
+name: LLVM Performance Gate
 
 on:
-  pull_request:
   push:
     branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
 
 jobs:
   perf:
@@ -14,13 +17,22 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      - name: Run benchmarks
-        run: cargo bench -- --nocapture | tee bench.txt
+      # 🔥 FIX clang-sys
+      - name: Install LLVM + libclang
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm clang libclang-dev
 
-      - name: Generate perf JSON
+      - name: Set LIBCLANG_PATH
+        run: echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
+
+      - name: Run benchmarks (Criterion)
+        run: cargo bench --workspace --all-features
+
+      - name: Generate latest.json
         run: |
           mkdir -p docs/bench-data
-          cargo run -p generate-bench-json -- bench.txt > docs/bench-data/latest.json
+          cargo run -p generate-bench-json -- target/criterion > docs/bench-data/latest.json
 
       - name: Ensure baseline exists
         run: |
@@ -28,7 +40,7 @@ jobs:
             cp docs/bench-data/latest.json docs/bench-data/baseline.json
           fi
 
-      - name: LLVM-level regression check
+      - name: Regression check
         run: cargo run -p perf-engine
 
       - name: Upload artifacts
@@ -36,3 +48,14 @@ jobs:
         with:
           name: perf-report
           path: docs/bench-data
+
+      - name: Commit baseline (main only)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          git config user.name github-actions
+          git config user.email actions@github.com
+
+          git add docs/bench-data
+
+          git diff --cached --quiet || git commit -m "bench: update baseline"
+          git push

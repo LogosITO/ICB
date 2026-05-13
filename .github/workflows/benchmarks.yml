@@ -19,16 +19,15 @@ jobs:
         with:
           toolchain: stable
 
-      - name: Install LLVM and Clang
+      - name: Install Clang dev libraries
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm-18 libllvm18 libclang-18-dev clang-18
-          sudo ln -sf /usr/lib/llvm-18/lib/libclang.so.1 /usr/lib/x86_64-linux-gnu/libclang.so || true
+          sudo apt-get install -y libclang-18-dev
 
       - name: Run benchmarks
         run: cargo bench --workspace --all-features
         env:
-          LIBCLANG_PATH: /usr/lib/llvm-18/lib
+          LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
           CARGO_BUILD_JOBS: 8
 
       - name: Generate JSON

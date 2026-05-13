@@ -4,60 +4,55 @@
 //! the HIR map.  The actual fact collection is delegated to
 //! [`visitor::collect_facts`].
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use icb_parser::facts::RawNode;
 use std::path::Path;
 
 #[cfg(feature = "nightly")]
-mod nightly_impl {
-    use anyhow::{anyhow, Context};
-    use icb_parser::facts::RawNode;
+pub fn run_analysis(crate_root: &Path, _args: &[String]) -> Result<Vec<RawNode>> {
+    use rustc_interface::interface;
     use std::panic;
-    use std::path::PathBuf;
 
-    pub fn run(crate_root: &Path, args: &[String]) -> Result<Vec<RawNode>> {
-        use rustc_interface::interface;
-        let crate_root = crate_root.to_path_buf();
-        let args = args.to_vec();
+    let crate_root = crate_root.to_path_buf();
 
-        let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
-            interface::run_compiler(
-                interface::Config {
-                    input: interface::Input::File(crate_root.clone()),
-                    crate_name: Some("analysis_target".to_string()),
-                    args,
-                    using_sysroot: true,
-                    ..Default::default()
-                },
-                |compiler| {
-                    let tcx = compiler.tcx();
-                    let hir_map = tcx.hir();
-                    let source_map = tcx.sess.source_map();
-                    crate::visitor::collect_facts(tcx, hir_map, source_map)
-                        .map_err(|e| anyhow!("{}", e))
-                },
-            )
-        }));
+    let result = panic::catch_unwind(panic::AssertUnwindSafe(|| {
+        interface::run_compiler(
+            interface::Config {
+                // Minimal config that should work with a typical nightly
+                opts: rustc_session::config::Options::default(),
+                input: rustc_session::config::Input::File(crate_root),
+                crate_cfg: vec![],
+                crate_check_cfg: vec![],
+                output_dir: None,
+                output_file: None,
+                file_loader: None,
+                locale_resources: &[],
+                lint_caps: Default::default(),
+                psess_created: None,
+                register_lints: None,
+                override_queries: None,
+                make_codegen_backend: None,
+                registry: vec![],
+                using_internal_features: true.into(),
+            },
+            |compiler| {
+                let tcx = compiler.tcx();
+                let hir_map = tcx.hir();
+                let source_map = tcx.sess.source_map();
+                crate::visitor::collect_facts(tcx, hir_map, source_map)
+                    .map_err(|e| anyhow!("{}", e))
+            },
+        )
+    }));
 
-        match result {
-            Ok(Ok(facts)) => Ok(facts),
-            Ok(Err(msg)) => Err(anyhow!("rustc analysis error: {}", msg)),
-            Err(p) => Err(anyhow!("rustc panicked: {:?}", p)),
-        }
+    match result {
+        Ok(Ok(facts)) => Ok(facts),
+        Ok(Err(msg)) => Err(anyhow!("rustc analysis error: {}", msg)),
+        Err(p) => Err(anyhow!("rustc panicked: {:?}", p)),
     }
 }
 
-/// Public driver entry point.
-///
-/// On non‑nightly builds this simply returns an empty vector.
-pub fn run_analysis(_crate_root: &Path, _args: &[String]) -> Result<Vec<RawNode>> {
-    #[cfg(feature = "nightly")]
-    {
-        nightly_impl::run(_crate_root, _args)
-    }
-    #[cfg(not(feature = "nightly"))]
-    {
-        log::warn!("icb-rustc driver: nightly feature not enabled");
-        Ok(vec![])
-    }
+#[cfg(not(feature = "nightly"))]
+pub fn run_analysis(_: &Path, _: &[String]) -> Result<Vec<RawNode>> {
+    Ok(vec![])
 }

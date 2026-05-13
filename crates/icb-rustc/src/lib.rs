@@ -1,3 +1,5 @@
+#![cfg_attr(feature = "nightly", feature(rustc_private))]
+
 //! # ICB Rustc Backend
 //!
 //! This crate provides a precise analysis of Rust source code by leveraging
@@ -29,28 +31,34 @@
 //! * The analysis is per‑crate; multi‑crate projects need to be handled at
 //!   the workspace level (see [`icb_graph::builder`]).
 
+#[cfg(feature = "nightly")]
+extern crate rustc_interface;
+
+#[cfg(feature = "nightly")]
+extern crate rustc_driver;
+
+#[cfg(feature = "nightly")]
+extern crate rustc_session;
+
+#[cfg(feature = "nightly")]
+extern crate rustc_hir;
+
+#[cfg(feature = "nightly")]
+extern crate rustc_middle;
+
+#[cfg(feature = "nightly")]
+extern crate rustc_span;
+
+#[cfg(feature = "nightly")]
 pub mod driver;
+
+#[cfg(feature = "nightly")]
 pub mod visitor;
 
 use anyhow::Result;
 use icb_parser::facts::RawNode;
 use std::path::Path;
 
-/// Run the `rustc`‑based analysis on a single Rust crate.
-///
-/// If the `nightly` feature is not active, this function returns an empty
-/// result immediately and logs a warning.
-///
-/// # Arguments
-///
-/// * `crate_root` – path to the root file of the crate (e.g., `src/main.rs`
-///   or `src/lib.rs`).
-/// * `args` – additional compiler arguments (e.g., `["--edition", "2021"]`).
-///
-/// # Errors
-///
-/// Returns an error if the `rustc` session cannot be initialised or if the
-/// visitor encounters a fatal condition.
 pub fn parse_rust_crate(_crate_root: &Path, _args: &[String]) -> Result<Vec<RawNode>> {
     #[cfg(feature = "nightly")]
     {
