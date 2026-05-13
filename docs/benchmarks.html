@@ -1,50 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ICB – Benchmarks</title>
+    <style>
+        :root {
+            --bg: #111; --surface: #1a1a1a; --text: #ccc; --accent: #b0b0b0;
+            --border: #333; --hover: #222; --header: #888;
+            --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+            --radius: 6px;
+        }
+        body { margin: 0; font-family: system-ui, sans-serif; background: var(--bg); color: var(--text); }
+        header { padding: 2rem; border-bottom: 1px solid var(--border); text-align: center; }
+        h1 { font-size: 2rem; color: var(--accent); }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem 2rem; }
+        .card {
+            background: var(--surface); border: 1px solid var(--border);
+            padding: 1.5rem; margin: 1.5rem 0; border-radius: var(--radius);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        }
+        .card h2 { margin-top: 0; color: var(--accent); }
+        table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+        th, td { padding: 0.6rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+        th { color: var(--header); font-weight: 500; text-align: left; background: rgba(255,255,255,0.03); }
+        tbody tr:hover { background: var(--hover); }
+        .time { font-family: var(--mono); text-align: right; white-space: nowrap; width: 130px; color: var(--accent); }
+        .bar-cell { width: 100px; }
+        .bar { background: var(--accent); height: 12px; border-radius: 6px; min-width: 4px; }
+        .error { color: #c44; font-size: 0.9rem; margin-top: 0.5rem; }
+        #meta { font-size: 0.85rem; color: var(--header); margin-bottom: 1rem; }
+        #meta span { margin-right: 1.5rem; }
+        .tab-nav { display: flex; gap: 0; margin-bottom: 1.5rem; border-bottom: 1px solid var(--border); }
+        .tab-nav a {
+            padding: 0.5rem 1.2rem; background: transparent; color: var(--text); text-decoration: none;
+            border: 1px solid transparent; border-bottom: none; border-radius: var(--radius) var(--radius) 0 0;
+            font-size: 0.9rem; transition: background 0.2s;
+        }
+        .tab-nav a.active { background: var(--surface); border-color: var(--border); color: var(--accent); }
+        .tab-nav a:hover:not(.active) { background: var(--hover); }
+        .crate-title { font-size: 1.2rem; color: var(--accent); margin-bottom: 0.5rem; }
+        .scenario-title { font-size: 1rem; color: var(--header); margin: 1.5rem 0 0.5rem; }
+        .loader { color: var(--header); font-style: italic; }
+        a { color: var(--accent); }
+        a:hover { color: white; }
+    </style>
+</head>
+<body>
+<header>
+    <h1>ICB – Benchmarks</h1>
+    <p>Performance measurements across all backends</p>
+    <a href="index.html" style="font-size:0.9rem;">← Back to project page</a>
+</header>
+<div class="container">
+    <div class="card">
+        <div id="meta"></div>
+        <div class="tab-nav" id="tabNav"></div>
+        <div id="content"><div class="loader">Loading benchmark data…</div></div>
+    </div>
+</div>
+
 <script>
     function formatTime(ns) {
-        if (ns < 1000) {
-            return ns.toFixed(2) + ' ns';
-        }
-
-        if (ns < 1_000_000) {
-            return (ns / 1_000).toFixed(2) + ' µs';
-        }
-
-        if (ns < 1_000_000_000) {
-            return (ns / 1_000_000).toFixed(2) + ' ms';
-        }
-
+        if (ns < 1000) return ns.toFixed(2) + ' ns';
+        if (ns < 1_000_000) return (ns / 1_000).toFixed(2) + ' µs';
+        if (ns < 1_000_000_000) return (ns / 1_000_000).toFixed(2) + ' ms';
         return (ns / 1_000_000_000).toFixed(2) + ' s';
     }
 
     async function loadData() {
         try {
             const resp = await fetch('bench-data/latest.json');
-
-            if (!resp.ok) {
-                throw new Error('Network error');
-            }
-
+            if (!resp.ok) throw new Error('Network error');
             const json = await resp.json();
-
             buildUI(json);
-
         } catch (e) {
-            document.getElementById('content').innerHTML =
-                `<div class="error">Failed to load data: ${e.message}</div>`;
+            document.getElementById('content').innerHTML = `<div class="error">Failed to load data: ${e.message}</div>`;
         }
     }
 
     function buildUI(data) {
         const crates = data.crates || {};
         const meta = data.metadata || {};
-
         document.getElementById('meta').innerHTML =
             `<span>Generated: ${meta.date || '?'}</span>
-         <span>Commit: ${(meta.commit || '?').slice(0, 7)}</span>
-         <span>Version: ${meta.version || '?'}</span>`;
+             <span>Commit: ${(meta.commit || '?').slice(0, 7)}</span>`;
 
         const nav = document.getElementById('tabNav');
         const content = document.getElementById('content');
-
         const crateNames = Object.keys(crates);
 
         if (crateNames.length === 0) {
@@ -53,28 +96,17 @@
         }
 
         nav.innerHTML = '';
-
         crateNames.forEach((crate, idx) => {
             const a = document.createElement('a');
-
             a.href = `#${crate}`;
             a.textContent = crate;
-
-            if (idx === 0) {
-                a.classList.add('active');
-            }
-
+            if (idx === 0) a.classList.add('active');
             a.addEventListener('click', e => {
                 e.preventDefault();
-
-                document.querySelectorAll('#tabNav a')
-                    .forEach(el => el.classList.remove('active'));
-
+                document.querySelectorAll('#tabNav a').forEach(el => el.classList.remove('active'));
                 a.classList.add('active');
-
                 renderCrate(crate, crates[crate]);
             });
-
             nav.appendChild(a);
         });
 
@@ -83,58 +115,28 @@
 
     function renderCrate(crateName, scenarios) {
         const content = document.getElementById('content');
-
-        let html =
-            `<div class="crate-section">
-            <div class="crate-title">${crateName}</div>`;
+        let html = `<div class="crate-section"><div class="crate-title">${crateName}</div>`;
 
         for (const [scenarioName, backends] of Object.entries(scenarios)) {
             const times = Object.values(backends);
             const maxTime = Math.max(...times);
-
-            html += `
-            <div class="scenario-block">
-                <div class="scenario-title">${scenarioName}</div>
-
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Backend</th>
-                            <th>Time</th>
-                            <th>Relative</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-
+            html += `<div class="scenario-block"><div class="scenario-title">${scenarioName}</div>`;
+            html += `<table><thead><tr><th>Backend</th><th>Time</th><th>Relative</th></tr></thead><tbody>`;
             for (const [backend, timeNs] of Object.entries(backends)) {
-                const pct = Math.max(
-                    Math.round((timeNs / maxTime) * 100),
-                    1
-                );
-
-                html += `
-                <tr>
+                const pct = maxTime > 0 ? Math.max(Math.round((timeNs / maxTime) * 100), 1) : 100;
+                html += `<tr>
                     <td>${backend}</td>
                     <td class="time">${formatTime(timeNs)}</td>
-                    <td class="bar-cell">
-                        <div class="bar" style="width:${pct}%"></div>
-                    </td>
-                </tr>
-            `;
+                    <td class="bar-cell"><div class="bar" style="width:${pct}%"></div></td>
+                </tr>`;
             }
-
-            html += `
-                    </tbody>
-                </table>
-            </div>
-        `;
+            html += `</tbody></table></div>`;
         }
-
-        html += '</div>';
-
+        html += `</div>`;
         content.innerHTML = html;
     }
 
     window.addEventListener('DOMContentLoaded', loadData);
 </script>
+</body>
+</html>
