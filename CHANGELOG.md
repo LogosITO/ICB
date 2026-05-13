@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.8](https://github.com/LogosITO/ICB/compare/v0.10.7...v0.10.8) (2026-05-13)
+
+
+### Chores
+
+* hotfix ([4388d9e](https://github.com/LogosITO/ICB/commit/4388d9e47364144c33016677a80524946d909a62))
+* perf action fix ([9a26e20](https://github.com/LogosITO/ICB/commit/9a26e20e1d8fb10dfefeddd0249b8cdf71bbd927))
+
 ## [0.10.7](https://github.com/LogosITO/ICB/compare/v0.10.6...v0.10.7) (2026-05-13)
 
 
