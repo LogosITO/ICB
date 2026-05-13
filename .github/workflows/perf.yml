@@ -26,7 +26,7 @@ jobs:
         run: echo "LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
 
       - name: Run benchmarks (Criterion)
-        run: cargo bench --workspace --all-features --exclude icb-rustc
+        run: cargo bench --workspace --all-features --exclude icb-rustc --exclude icb-clang-benchmarks
 
       - name: Generate latest.json
         run: |
