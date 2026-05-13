@@ -62,6 +62,7 @@ fn main() -> Result<()> {
 
 fn classify(bench_name: &str) -> (String, String, String) {
     let name = bench_name;
+
     if name.starts_with("build_graph_") {
         return ("icb-graph".into(), "Build Graph".into(), "rust".into());
     }
@@ -71,10 +72,14 @@ fn classify(bench_name: &str) -> (String, String, String) {
     if name.starts_with("resolve_calls_") {
         return ("icb-graph".into(), "Resolve Calls".into(), "rust".into());
     }
-    if name.starts_with("focal_graph_depth2_") {
+    if name.starts_with("focal_graph_") {
+        return ("icb-graph".into(), "Focal Graph".into(), "rust".into());
+    }
+
+    if name.starts_with("analytics_") || name.starts_with("analytics_metrics_") {
         return (
-            "icb-graph".into(),
-            "Focal Graph Depth2".into(),
+            "icb-server".into(),
+            "Analytics Metrics".into(),
             "rust".into(),
         );
     }
@@ -91,19 +96,15 @@ fn classify(bench_name: &str) -> (String, String, String) {
             "rust".into(),
         );
     }
-    if name.starts_with("graph_json_serialize_") {
+    if name.starts_with("graph_json_serialize_") || name.starts_with("json_serialize_") {
         return (
             "icb-server".into(),
             "Graph Json Serialize".into(),
             "rust".into(),
         );
     }
-    if name.starts_with("subgraph_by_kind_function_") {
-        return (
-            "icb-server".into(),
-            "Subgraph By Kind Function".into(),
-            "rust".into(),
-        );
+    if name.starts_with("subgraph_") {
+        return ("icb-server".into(), "Subgraph".into(), "rust".into());
     }
     if name == "real_project_pipeline" {
         return (
@@ -112,10 +113,26 @@ fn classify(bench_name: &str) -> (String, String, String) {
             "rust".into(),
         );
     }
+
+    if let Some(rest) = name.strip_prefix("rustc_") {
+        let scenario = rest
+            .split('_')
+            .take_while(|s| !s.chars().all(char::is_numeric))
+            .collect::<Vec<_>>()
+            .join("_");
+        let scenario_name = match scenario.as_str() {
+            "deeply_nested" => "Deeply Nested",
+            "many_calls" => "Many Calls",
+            "single_large_file" => "Single Large File",
+            _ => scenario.as_str(),
+        };
+        return ("icb-rustc".into(), scenario_name.into(), "rustc".into());
+    }
+
     if name.starts_with("deeply_nested_") {
         return ("icb-clang".into(), "Deeply Nested".into(), "clang".into());
     }
-    if name.starts_with("many_calls_") {
+    if name.starts_with("many_calls_") && !name.starts_with("many_calls_ts_") {
         return ("icb-clang".into(), "Many Calls".into(), "clang".into());
     }
     if name.starts_with("single_large_file_") {
@@ -153,6 +170,7 @@ fn classify(bench_name: &str) -> (String, String, String) {
             "clang".into(),
         );
     }
+
     if let Some(rest) = name.strip_prefix("ts_") {
         let mut parts = rest.splitn(2, '_');
         let lang = parts.next().unwrap_or("unknown");
@@ -162,18 +180,24 @@ fn classify(bench_name: &str) -> (String, String, String) {
             .take_while(|s| !s.chars().all(char::is_numeric))
             .collect::<Vec<_>>()
             .join("_");
-        let scenario_name = match scenario.as_str() {
-            "deeply_nested" => "Deeply Nested",
-            "many_calls" => "Many Calls",
-            "single_large_file" => "Single Large File",
-            "real_project" => "Real Project",
-            _ => scenario_raw,
+        let scenario_name = if scenario.starts_with("large_file") {
+            "Single Large File"
+        } else if scenario.starts_with("many_calls") {
+            "Many Calls"
+        } else if scenario.starts_with("deeply_nested") {
+            "Deeply Nested"
+        } else if scenario.starts_with("real_project") {
+            "Real Project"
+        } else {
+            scenario.as_str()
         };
         let backend = format!("ts_{}", lang);
         return ("icb-parser".into(), scenario_name.into(), backend);
     }
+
     if name == "report" {
         return ("icb-report".into(), "Report".into(), "rust".into());
     }
+
     ("unknown".into(), name.into(), "unknown".into())
 }
