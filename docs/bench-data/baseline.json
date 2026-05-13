@@ -1,7 +1,58 @@
 {
   "metadata": {
-    "date": "2026-05-10T16:01:08.937707068+00:00",
-    "commit": "6615a8c99982e5a43f2e0758e1ddeee0060ff2f7"
+    "date": "2026-05-13T20:22:51.669438397+00:00",
+    "commit": "4e9faef17a0aab184cedaa20a4278344395f654c"
   },
-  "crates": {}
+  "crates": {
+    "icb-graph": {
+      "Build Graph": {
+        "rust": 293834.1431029425
+      },
+      "Full Analysis": {
+        "rust": 87081.82187299333
+      },
+      "Resolve Calls": {
+        "rust": 294178.1808565726
+      }
+    },
+    "icb-parser": {
+      "Deeply Nested": {
+        "ts_cpp": 28631.822125263512,
+        "ts_go": 114380.35369757678,
+        "ts_ruby": 34793.29981592203
+      },
+      "Many Calls": {
+        "ts_cpp": 205811755.06,
+        "ts_go": 424377731.02,
+        "ts_ruby": 171418766.52
+      },
+      "Single Large File": {
+        "ts_cpp": 9526974.495000005,
+        "ts_go": 7174033.03,
+        "ts_ruby": 9552649.566666668
+      }
+    },
+    "icb-rustc": {
+      "Deeply Nested": {
+        "rustc": 192842.12227715988
+      },
+      "Many Calls": {
+        "rustc": 378306.6243815424
+      },
+      "Single Large File": {
+        "rustc": 314776.62261243036
+      }
+    },
+    "icb-server": {
+      "Analytics Metrics": {
+        "rust": 28194.370932040052
+      },
+      "Graph Json Serialize": {
+        "rust": 229820.59862559944
+      },
+      "Subgraph": {
+        "rust": 4075.901187504094
+      }
+    }
+  }
 }
