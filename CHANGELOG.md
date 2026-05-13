@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.12](https://github.com/LogosITO/ICB/compare/v0.10.11...v0.10.12) (2026-05-13)
+
+
+### Bug Fixes
+
+* Benchmark script fix and change to ubuntu latest for stability ([1e9e912](https://github.com/LogosITO/ICB/commit/1e9e91239eba47ee581feb85dedd474f2f981990))
+
 ## [0.10.11](https://github.com/LogosITO/ICB/compare/v0.10.10...v0.10.11) (2026-05-13)
 
 
