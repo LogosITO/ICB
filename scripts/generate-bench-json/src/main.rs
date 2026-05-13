@@ -19,19 +19,19 @@ struct Metadata {
 
 fn main() -> Result<()> {
     let args: Vec<String> = env::args().collect();
-
     let input = if args.len() > 1 {
-        &args[1]
+        args[1].clone()
     } else {
-        "target/criterion"
+        "target/criterion".into()
     };
 
     let mut crates: BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>> = BTreeMap::new();
 
-    if Path::new(input).join("new").exists() {
-        parse_criterion(input, &mut crates)?;
+    let path = Path::new(&input);
+    if path.is_dir() {
+        parse_criterion_dir(path, &mut crates)?;
     } else {
-        parse_bench_txt(input, &mut crates)?;
+        parse_bench_txt(path, &mut crates)?;
     }
 
     let output = Output {
@@ -46,71 +46,135 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn parse_criterion(
-    root: &str,
+fn parse_criterion_dir(
+    root: &Path,
     crates: &mut BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
 ) -> Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().to_string();
-
-        let path = entry.path().join("new").join("estimates.json");
-        if !path.exists() {
+    for group_entry in fs::read_dir(root)? {
+        let group_entry = group_entry?;
+        let group_path = group_entry.path();
+        if !group_path.is_dir() {
             continue;
         }
+        let group_name = group_entry.file_name().to_string_lossy().to_string();
 
-        let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        for bench_entry in fs::read_dir(&group_path)? {
+            let bench_entry = bench_entry?;
+            let bench_path = bench_entry.path();
+            if !bench_path.is_dir() {
+                continue;
+            }
+            let bench_name = bench_entry.file_name().to_string_lossy().to_string();
 
-        let ns = json["mean"]["point_estimate"].as_f64().unwrap_or(0.0);
+            let estimates = bench_path.join("new").join("estimates.json");
+            if !estimates.exists() {
+                continue;
+            }
 
-        let (krate, scenario, backend) = classify(&name);
+            let json: serde_json::Value = serde_json::from_str(&fs::read_to_string(&estimates)?)?;
+            let point_estimate = json["mean"]["point_estimate"].as_f64().unwrap_or(0.0);
 
-        crates
-            .entry(krate)
-            .or_default()
-            .entry(scenario)
-            .or_default()
-            .insert(backend, ns);
+            let (crate_name, scenario, backend) = classify(&bench_name, &group_name);
+
+            crates
+                .entry(crate_name)
+                .or_default()
+                .entry(scenario)
+                .or_default()
+                .insert(backend, point_estimate);
+        }
     }
-
     Ok(())
 }
 
 fn parse_bench_txt(
-    path: &str,
+    path: &Path,
     crates: &mut BTreeMap<String, BTreeMap<String, BTreeMap<String, f64>>>,
 ) -> Result<()> {
     let content = fs::read_to_string(path).context("bench.txt missing")?;
-
     for line in content.lines() {
         if !line.contains("time:") {
             continue;
         }
-
-        // fallback dummy parsing
-        let (krate, scenario, backend) = ("unknown".into(), "bench".into(), "rust".into());
-
+        let (crate_name, scenario, backend) = ("unknown".into(), "bench".into(), "rust".into());
         crates
-            .entry(krate)
+            .entry(crate_name)
             .or_default()
             .entry(scenario)
             .or_default()
             .insert(backend, 0.0);
     }
-
     Ok(())
 }
 
-fn classify(name: &str) -> (String, String, String) {
-    if name.contains("single_large_file") {
-        ("icb-parser".into(), "Single Large File".into(), "ts".into())
-    } else if name.contains("deeply_nested") {
-        ("icb-parser".into(), "Deeply Nested".into(), "ts".into())
-    } else if name.contains("many_calls") {
-        ("icb-parser".into(), "Many Calls".into(), "ts".into())
-    } else if name.contains("real_project") {
-        ("icb-parser".into(), "Real Project".into(), "ts".into())
-    } else {
-        ("unknown".into(), name.into(), "unknown".into())
+fn classify(bench_name: &str, group_name: &str) -> (String, String, String) {
+    if bench_name.starts_with("ts_") {
+        let rest = bench_name.strip_prefix("ts_").unwrap_or(bench_name);
+        let mut parts = rest.splitn(2, '_');
+        let lang = parts.next().unwrap_or("unknown");
+        let scenario = parts.next().unwrap_or("unknown");
+        let scenario_clean = scenario
+            .split('_')
+            .take_while(|s| !s.chars().all(char::is_numeric))
+            .collect::<Vec<_>>()
+            .join("_");
+        let crate_name = "icb-parser".into();
+        let backend = format!("ts_{}", lang);
+        let scenario_name = match scenario_clean.as_str() {
+            "deeply_nested" => "Deeply Nested".into(),
+            "many_calls" => "Many Calls".into(),
+            "single_large_file" => "Single Large File".into(),
+            "real_project" => "Real Project".into(),
+            _ => scenario_clean,
+        };
+        return (crate_name, scenario_name, backend);
     }
+
+    if bench_name.starts_with("rustc_") {
+        let rest = bench_name.strip_prefix("rustc_").unwrap();
+        let scenario = rest
+            .split('_')
+            .take_while(|s| !s.chars().all(char::is_numeric))
+            .collect::<Vec<_>>()
+            .join("_");
+        let scenario_name = match scenario.as_str() {
+            "deeply_nested" => "Deeply Nested".into(),
+            "many_calls" => "Many Calls".into(),
+            "single_large_file" => "Single Large File".into(),
+            _ => scenario,
+        };
+        return ("icb-rustc".into(), scenario_name, "rustc".into());
+    }
+
+    match group_name {
+        "build_graph" => {
+            return ("icb-graph".into(), "Build Graph".into(), "rust".into());
+        }
+        "full_analysis" => {
+            return ("icb-graph".into(), "Full Analysis".into(), "rust".into());
+        }
+        "resolve_calls" => {
+            return ("icb-graph".into(), "Resolve Calls".into(), "rust".into());
+        }
+        "analytics_metrics" => {
+            return (
+                "icb-server".into(),
+                "Analytics Metrics".into(),
+                "rust".into(),
+            );
+        }
+        "graph_serialization" => {
+            return (
+                "icb-server".into(),
+                "Graph Serialization".into(),
+                "rust".into(),
+            );
+        }
+        "graph_subgraph" => {
+            return ("icb-server".into(), "Graph Subgraph".into(), "rust".into());
+        }
+        _ => {}
+    }
+
+    ("unknown".into(), group_name.into(), "unknown".into())
 }
