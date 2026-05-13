@@ -37,7 +37,7 @@ jobs:
         env:
           LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
 
-      - name: Load baseline
+      - name: Load baseline (if missing)
         run: |
           if [ ! -f docs/bench-data/baseline.json ]; then
             cp docs/bench-data/latest.json docs/bench-data/baseline.json
@@ -48,7 +48,7 @@ jobs:
         env:
           LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
 
-      - name: Commit results
+      - name: Commit updated baseline (main only)
         if: github.ref == 'refs/heads/main'
         run: |
           git config user.name github-actions
