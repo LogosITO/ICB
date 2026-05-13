@@ -58,12 +58,6 @@
         .filter-backends { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 1rem; }
         .filter-backends label { display: flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; cursor: pointer; }
         .filter-backends input[type="checkbox"] { accent-color: var(--accent); }
-        .btn-copy {
-            background: transparent; border: 1px solid var(--border); color: var(--text);
-            padding: 0.2rem 0.6rem; border-radius: var(--radius); cursor: pointer; font-size: 0.8rem;
-            margin-left: 0.5rem; transition: background 0.2s;
-        }
-        .btn-copy:hover { background: var(--hover); }
     </style>
 </head>
 <body>
@@ -115,7 +109,7 @@
         document.getElementById('meta').innerHTML =
             `<span>Generated: ${meta.date || '?'}</span>
              <span>Commit: ${(meta.commit || '?').slice(0, 7)}</span>
-             ${baselineData ? '<span>Baseline loaded</span>' : ''}`;
+             ${baselineData && Object.keys(baselineData.crates || {}).length > 0 ? '<span>Baseline available</span>' : '<span>No baseline yet</span>'}`;
 
         const nav = document.getElementById('tabNav');
         const crateNames = Object.keys(crates);
@@ -139,20 +133,27 @@
             nav.appendChild(a);
         });
         activeCrate = crateNames[0];
-        populateBackendFilters(crates[activeCrate]);
+        populateBackendFilters(crates);
         applyFilters();
     }
 
-    function populateBackendFilters(scenarios) {
+    function collectAllBackends(allCrates) {
         const backends = new Set();
-        for (const [, backendsObj] of Object.entries(scenarios)) {
-            for (const backend of Object.keys(backendsObj)) {
-                backends.add(backend);
+        for (const crate of Object.values(allCrates)) {
+            for (const scenario of Object.values(crate)) {
+                for (const backend of Object.keys(scenario)) {
+                    backends.add(backend);
+                }
             }
         }
+        return Array.from(backends).sort();
+    }
+
+    function populateBackendFilters(allCrates) {
+        const allBackends = collectAllBackends(allCrates);
         const container = document.getElementById('backendFilters');
         container.innerHTML = '';
-        backends.forEach(b => {
+        allBackends.forEach(b => {
             const label = document.createElement('label');
             label.innerHTML = `<input type="checkbox" value="${b}" checked onchange="applyFilters()"> ${b}`;
             container.appendChild(label);
@@ -216,7 +217,7 @@
             }
             html += `</tbody></table></div>`;
         }
-        if (!visible) html += '<p>No matching scenarios.</p>';
+        if (!visible) html += '<p>No matching scenarios with selected backends.</p>';
         html += `</div>`;
         content.innerHTML = html;
 
@@ -238,7 +239,6 @@
         rows.sort((a, b) => {
             let aVal = a.cells[colIdx].textContent.trim();
             let bVal = b.cells[colIdx].textContent.trim();
-            // try numeric extraction
             const aNum = parseFloat(aVal.replace(/[^0-9.-]/g, ''));
             const bNum = parseFloat(bVal.replace(/[^0-9.-]/g, ''));
             if (!isNaN(aNum) && !isNaN(bNum)) {
