@@ -30,23 +30,21 @@ jobs:
           LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
           CARGO_BUILD_JOBS: 8
 
-      - name: Generate JSON
+      - name: Generate latest.json
         run: |
           mkdir -p docs/bench-data
           cargo run -p generate-bench-json > docs/bench-data/latest.json
         env:
           LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
 
-      - name: Load baseline (if missing)
-        run: |
-          if [ ! -f docs/bench-data/baseline.json ]; then
-            cp docs/bench-data/latest.json docs/bench-data/baseline.json
-          fi
-
-      - name: Regression check
+      - name: Regression check (against current baseline)
         run: cargo run -p benchmark-regression-check
         env:
           LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
+
+      - name: Update baseline (main only, after successful check)
+        if: success() && github.ref == 'refs/heads/main'
+        run: cp docs/bench-data/latest.json docs/bench-data/baseline.json
 
       - name: Commit updated baseline (main only)
         if: github.ref == 'refs/heads/main'
