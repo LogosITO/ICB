@@ -1,91 +1,57 @@
 {
   "metadata": {
-    "date": "2026-05-13T17:30:39.085023506+00:00",
-    "commit": "c0d0f72aefd3878487812affb726a442e1aad882"
+    "date": "2026-05-13T18:16:58.800180290+00:00",
+    "commit": "942b70ac0b91230c8340b3c59ed352680803346e"
   },
   "crates": {
     "icb-graph": {
       "Build Graph": {
-        "rust": 294683.5650636412
+        "rust": 245787.2331588703
       },
       "Full Analysis": {
-        "rust": 87363.11029359102
+        "rust": 72932.82667992868
       },
       "Resolve Calls": {
-        "rust": 295679.00065656175
+        "rust": 245432.7528228888
       }
     },
     "icb-parser": {
       "Deeply Nested": {
-        "ts_cpp": 27345.677502886203,
-        "ts_go": 111952.05936881097,
-        "ts_ruby": 32684.943823732756
+        "ts_cpp": 21731.71420178424,
+        "ts_go": 89723.66308969088,
+        "ts_ruby": 26146.306511720228
       },
       "Many Calls": {
-        "ts_cpp": 204702240.32,
-        "ts_go": 423602745.79,
-        "ts_ruby": 172582998.4
+        "ts_cpp": 164830214.17,
+        "ts_go": 332787407.23,
+        "ts_ruby": 138588735.82
       },
-      "large_file_1000_funcs": {
-        "ts_cpp": 9493312.393333334,
-        "ts_go": 7119734.1575,
-        "ts_ruby": 9482313.956666663
+      "Single Large File": {
+        "ts_cpp": 7627920.725714288,
+        "ts_go": 5745109.298888893,
+        "ts_ruby": 7322618.497142859
       }
     },
-    "unknown": {
-      "analytics_100_functions": {
-        "unknown": 29320.05427570692
+    "icb-rustc": {
+      "Deeply Nested": {
+        "rustc": 986216.4895020424
       },
-      "analytics_2000_functions": {
-        "unknown": 618955.3726005381
+      "Many Calls": {
+        "rustc": 2742651.9042857136
       },
-      "analytics_500_functions": {
-        "unknown": 164898.08449667064
+      "Single Large File": {
+        "rustc": 1195434.131982637
+      }
+    },
+    "icb-server": {
+      "Analytics Metrics": {
+        "rust": 22966.254012767648
       },
-      "json_serialize_100_nodes": {
-        "unknown": 11688.550962500669
+      "Graph Json Serialize": {
+        "rust": 175612.77102666078
       },
-      "json_serialize_2000_nodes": {
-        "unknown": 233121.79793243884
-      },
-      "json_serialize_500_nodes": {
-        "unknown": 58375.91563259054
-      },
-      "rustc_deeply_nested_100_levels": {
-        "unknown": 199848.33045573108
-      },
-      "rustc_deeply_nested_10_levels": {
-        "unknown": 207436.20865119863
-      },
-      "rustc_deeply_nested_50_levels": {
-        "unknown": 208346.2025029895
-      },
-      "rustc_many_calls_1000": {
-        "unknown": 385812.98284290015
-      },
-      "rustc_many_calls_10000": {
-        "unknown": 3896318.215714286
-      },
-      "rustc_many_calls_50000": {
-        "unknown": 19976461.659999996
-      },
-      "rustc_single_large_file_100_funcs": {
-        "unknown": 213280.96777360883
-      },
-      "rustc_single_large_file_2000_funcs": {
-        "unknown": 649233.1022115147
-      },
-      "rustc_single_large_file_500_funcs": {
-        "unknown": 319891.2985425147
-      },
-      "subgraph_100_nodes": {
-        "unknown": 1035.1041921375925
-      },
-      "subgraph_2000_nodes": {
-        "unknown": 4050.654837701929
-      },
-      "subgraph_500_nodes": {
-        "unknown": 1722.3240887572797
+      "Subgraph": {
+        "rust": 3518.94239026113
       }
     }
   }
