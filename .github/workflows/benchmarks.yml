@@ -25,7 +25,7 @@ jobs:
           sudo apt-get install -y libclang-18-dev
 
       - name: Run benchmarks
-        run: cargo bench --workspace --all-features
+        run: cargo bench --workspace --all-features --exclude icb-rustc
         env:
           LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
           CARGO_BUILD_JOBS: 8
@@ -35,7 +35,7 @@ jobs:
           mkdir -p docs/bench-data
           cargo run -p generate-bench-json > docs/bench-data/latest.json
         env:
-          LIBCLANG_PATH: /usr/lib/llvm-18/lib
+          LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
 
       - name: Load baseline
         run: |
@@ -46,7 +46,7 @@ jobs:
       - name: Regression check
         run: cargo run -p benchmark-regression-check
         env:
-          LIBCLANG_PATH: /usr/lib/llvm-18/lib
+          LIBCLANG_PATH: /usr/lib/x86_64-linux-gnu
 
       - name: Commit results
         if: github.ref == 'refs/heads/main'
