@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.3](https://github.com/LogosITO/ICB/compare/v0.11.2...v0.11.3) (2026-05-13)
+
+
+### Chores
+
+* baseline.json change for test ([138e17e](https://github.com/LogosITO/ICB/commit/138e17e82566cdc1b5641e636fd80438757b6462))
+
 ## [0.11.2](https://github.com/LogosITO/ICB/compare/v0.11.1...v0.11.2) (2026-05-13)
 
 
