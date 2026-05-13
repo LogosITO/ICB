@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde_json::Value;
 use std::fs;
 
-const THRESHOLD: f64 = 0.10; // 10%
+const THRESHOLD: f64 = 0.10;
 
 fn main() -> Result<()> {
     let latest: Value = serde_json::from_str(&fs::read_to_string("docs/bench-data/latest.json")?)?;
@@ -23,13 +23,8 @@ fn main() -> Result<()> {
                             let lv = lv.as_f64().unwrap();
                             let bv = bv.as_f64().unwrap();
 
-                            let delta = (lv - bv) / bv;
-
-                            if delta > THRESHOLD {
-                                println!(
-                                    "REGRESSION: {krate} / {scenario} / {backend} : {bv} → {lv} (+{:.2}%)",
-                                    delta * 100.0
-                                );
+                            if lv > bv * (1.0 + THRESHOLD) {
+                                println!("REGRESSION {} {} {}", krate, scenario, backend);
                                 failed = true;
                             }
                         }
@@ -43,6 +38,6 @@ fn main() -> Result<()> {
         std::process::exit(1);
     }
 
-    println!("OK: no regressions");
+    println!("OK");
     Ok(())
 }
