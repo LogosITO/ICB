@@ -76,7 +76,7 @@ fn classify(bench_name: &str) -> (String, String, String) {
         return ("icb-graph".into(), "Focal Graph".into(), "rust".into());
     }
 
-    if name.starts_with("analytics_") || name.starts_with("analytics_metrics_") {
+    if name.starts_with("analytics_") {
         return (
             "icb-server".into(),
             "Analytics Metrics".into(),
@@ -129,48 +129,6 @@ fn classify(bench_name: &str) -> (String, String, String) {
         return ("icb-rustc".into(), scenario_name.into(), "rustc".into());
     }
 
-    if name.starts_with("deeply_nested_") {
-        return ("icb-clang".into(), "Deeply Nested".into(), "clang".into());
-    }
-    if name.starts_with("many_calls_") && !name.starts_with("many_calls_ts_") {
-        return ("icb-clang".into(), "Many Calls".into(), "clang".into());
-    }
-    if name.starts_with("single_large_file_") {
-        return (
-            "icb-clang".into(),
-            "Single Large File".into(),
-            "clang".into(),
-        );
-    }
-    if name.starts_with("real_project_parallel") {
-        return (
-            "icb-clang".into(),
-            "Real Project Parallel".into(),
-            "clang".into(),
-        );
-    }
-    if name.starts_with("real_project_sequential") {
-        return (
-            "icb-clang".into(),
-            "Real Project Sequential".into(),
-            "clang".into(),
-        );
-    }
-    if name.starts_with("with_system_headers") {
-        return (
-            "icb-clang".into(),
-            "With System Headers".into(),
-            "clang".into(),
-        );
-    }
-    if name.starts_with("without_system_headers") {
-        return (
-            "icb-clang".into(),
-            "Without System Headers".into(),
-            "clang".into(),
-        );
-    }
-
     if let Some(rest) = name.strip_prefix("ts_") {
         let mut parts = rest.splitn(2, '_');
         let lang = parts.next().unwrap_or("unknown");
@@ -189,10 +147,52 @@ fn classify(bench_name: &str) -> (String, String, String) {
         } else if scenario.starts_with("real_project") {
             "Real Project"
         } else {
-            scenario.as_str()
+            scenario_raw
         };
         let backend = format!("ts_{}", lang);
         return ("icb-parser".into(), scenario_name.into(), backend);
+    }
+
+    if name.starts_with("deeply_nested_") {
+        return ("icb-clang".into(), "Deeply Nested".into(), "clang".into());
+    }
+    if name.starts_with("many_calls_") && !name.starts_with("many_calls_ts_") {
+        return ("icb-clang".into(), "Many Calls".into(), "clang".into());
+    }
+    if name.starts_with("single_large_file_") {
+        return (
+            "icb-clang".into(),
+            "Single Large File".into(),
+            "clang".into(),
+        );
+    }
+    if name == "real_project_parallel" {
+        return (
+            "icb-clang".into(),
+            "Real Project Parallel".into(),
+            "clang".into(),
+        );
+    }
+    if name == "real_project_sequential" {
+        return (
+            "icb-clang".into(),
+            "Real Project Sequential".into(),
+            "clang".into(),
+        );
+    }
+    if name == "with_system_headers" {
+        return (
+            "icb-clang".into(),
+            "With System Headers".into(),
+            "clang".into(),
+        );
+    }
+    if name == "without_system_headers" {
+        return (
+            "icb-clang".into(),
+            "Without System Headers".into(),
+            "clang".into(),
+        );
     }
 
     if name == "report" {
