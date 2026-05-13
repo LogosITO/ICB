@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.9](https://github.com/LogosITO/ICB/compare/v0.10.8...v0.10.9) (2026-05-13)
+
+
+### Chores
+
+* Benchmarks ci fix ([34d280f](https://github.com/LogosITO/ICB/commit/34d280f976bfe556fa84702e022654101cbe4e29))
+
 ## [0.10.8](https://github.com/LogosITO/ICB/compare/v0.10.7...v0.10.8) (2026-05-13)
 
 
