@@ -17,14 +17,13 @@ jobs:
 
       - uses: actions-rust-lang/setup-rust-toolchain@v1
 
-      # 🔥 FIX clang-sys
-      - name: Install LLVM + libclang
+      - name: Install libclang dev
         run: |
           sudo apt-get update
-          sudo apt-get install -y llvm clang libclang-dev
+          sudo apt-get install -y libclang-18-dev
 
       - name: Set LIBCLANG_PATH
-        run: echo "LIBCLANG_PATH=/usr/lib/llvm-14/lib" >> $GITHUB_ENV
+        run: echo "LIBCLANG_PATH=/usr/lib/x86_64-linux-gnu" >> $GITHUB_ENV
 
       - name: Run benchmarks (Criterion)
         run: cargo bench --workspace --all-features
