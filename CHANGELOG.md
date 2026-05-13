@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.2](https://github.com/LogosITO/ICB/compare/v0.11.1...v0.11.2) (2026-05-13)
+
+
+### Bug Fixes
+
+* **ci:** benchmarks.yml work with baseline.json file ([71b4964](https://github.com/LogosITO/ICB/commit/71b49649dc414f11675fa7291f183038b30deea2))
+
 ## [0.11.1](https://github.com/LogosITO/ICB/compare/v0.11.0...v0.11.1) (2026-05-13)
 
 
