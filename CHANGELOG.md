@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.11](https://github.com/LogosITO/ICB/compare/v0.10.10...v0.10.11) (2026-05-13)
+
+
+### Bug Fixes
+
+* scripts for benchmarks and performance check ([93892e5](https://github.com/LogosITO/ICB/commit/93892e586cbc3bac3076c0b690e6f8301f75c9c0))
+
 ## [0.10.10](https://github.com/LogosITO/ICB/compare/v0.10.9...v0.10.10) (2026-05-13)
 
 
