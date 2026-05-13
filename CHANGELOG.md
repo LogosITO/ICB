@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.7](https://github.com/LogosITO/ICB/compare/v0.10.6...v0.10.7) (2026-05-13)
+
+
+### Bug Fixes
+
+* **ci:** Benchmarks and perf github actions another try to fix ([84fd197](https://github.com/LogosITO/ICB/commit/84fd197e2bb0a81b7b305204efc8b30ed0e24775))
+
 ## [0.10.6](https://github.com/LogosITO/ICB/compare/v0.10.5...v0.10.6) (2026-05-10)
 
 
